@@ -8,6 +8,11 @@ export const scenarioConfigSchema = z.object({
   conditionEnemyLowLife: z.boolean().optional(),
   conditionRecentlyKilled: z.boolean().optional(),
   buffOnslaught: z.boolean().optional(),
+  sigilOfPowerStages: z.number().finite().min(0).max(10).optional(),
+  frostShieldStages: z.number().finite().min(0).max(10).optional(),
+  arcaneCloakUsedRecentlyCheck: z.boolean().optional(),
+  conditionEnemyShocked: z.boolean().optional(),
+  conditionEnemyChilled: z.boolean().optional(),
 }).strict();
 
 export const engineRequestSchema = z.object({

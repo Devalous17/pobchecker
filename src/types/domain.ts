@@ -5,7 +5,7 @@ export interface BuildIdentity { name: string; level?: number; className?: strin
 export interface SourceEntry { category: "gem" | "item" | "passive" | "ascendancy" | "flask" | "configuration"; name: string; detail: string; }
 export interface PassiveNode { name: string; type: "notable" | "keystone" | "ascendancy" | "passive" | "unknown"; allocated: boolean; }
 export interface SourceAsset { category: "gem" | "item" | "flask" | "passive" | "ascendancy"; name: string; detail: string; iconUrl?: string; attributeColor: "int" | "dex" | "str" | "hybrid" | "unknown"; }
-export interface ImportedStats { source: "pob-calcs" | "unavailable"; totalDps?: number; hitDps?: number; life?: number; energyShield?: number; mana?: number; armour?: number; evasion?: number; block?: number; spellBlock?: number; spellSuppression?: number; effectiveHealthPool?: number; }
+export interface ImportedStats { source: "pob-calcs" | "unavailable"; fullDps?: number; totalDps?: number; averageHit?: number; speed?: number; life?: number; energyShield?: number; mana?: number; armour?: number; evasion?: number; block?: number; spellBlock?: number; spellSuppression?: number; effectiveHealthPool?: number; physicalMaximumHit?: number; elementalMaximumHit?: number; chaosMaximumHit?: number; }
 export interface NormalizedBuild {
   identity: BuildIdentity;
   rawXml: string;
@@ -19,6 +19,8 @@ export interface NormalizedBuild {
   diagnostics: string[];
   sourceAssets: SourceAsset[];
   importedStats: ImportedStats;
+  allocatedNodeIds: string[];
+  treeVersion?: string;
 }
 export interface ConditionEvidence { kind: "configuration" | "skill" | "item" | "passive" | "ascendancy" | "xml"; label: string; detail: string; }
 export interface Condition {
