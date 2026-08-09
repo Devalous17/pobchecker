@@ -23,6 +23,7 @@ local function calculate(request)
   for key, value in pairs(request.scenario or {}) do
     if allowed[key] and (type(value) == "boolean" or type(value) == "number") then inputs[key] = value end
   end
+  if not build.calcsTab then error("PoB calculation tab did not initialise") end
   build.calcsTab:BuildOutput()
   local output = build.calcsTab.mainOutput or {}
   return {
@@ -31,7 +32,7 @@ local function calculate(request)
     scenario = request.scenario or {},
     offence = { fullDPS = numberOrNil(output.FullDPS), totalDPS = numberOrNil(output.TotalDPS), totalDot = numberOrNil(output.TotalDot), averageDamage = numberOrNil(output.AverageDamage), speed = numberOrNil(output.Speed) },
     defence = { totalEHP = numberOrNil(output.TotalEHP), physicalMaximumHitTaken = numberOrNil(output.PhysicalMaximumHitTaken), elementalMaximumHitTaken = numberOrNil(output.ElementalMaximumHitTaken), chaosMaximumHitTaken = numberOrNil(output.ChaosMaximumHitTaken) },
-    diagnostics = {},
+    diagnostics = { "Calculated by the pinned Path of Building Community headless wrapper." },
   }
 end
 

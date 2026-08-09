@@ -2,6 +2,7 @@ import type { NormalizedBuild, PassiveNode, SourceAsset, SourceEntry, TreeGraphN
 
 const cache = new Map<string, string>();
 const treeUrl = (version: string) => `https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/dev/src/TreeData/${version.replace(".", "_")}/tree.lua`;
+const treeMirrorUrl = (version: string) => `https://cdn.jsdelivr.net/gh/PathOfBuildingCommunity/PathOfBuilding@dev/src/TreeData/${version.replace(".", "_")}/tree.lua`;
 
 type GroupPosition = { x: number; y: number };
 type TreeConstants = { skillsPerOrbit: number[]; orbitRadii: number[] };
@@ -59,7 +60,7 @@ function parseNodeRecord(lua: string, id: string, groups: Map<number, GroupPosit
   const links = [...linksBlock.matchAll(/"(\d+)"/g)].map((item) => item[1]);
   const statsBlock = block.match(/\["stats"\]= \{([\s\S]*?)\}/)?.[1] ?? "";
   const stats = [...statsBlock.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((item) => item[1]);
-  return { id, name, type, allocated: true, x: center ? center.x + Math.cos(angle) * radius : undefined, y: center ? center.y + Math.sin(angle) * radius : undefined, links, stats };
+  return { id, name, type, source: type === "ascendancy" ? "ascendancy" : "core-tree", allocated: true, x: center ? center.x + Math.cos(angle) * radius : undefined, y: center ? center.y + Math.sin(angle) * radius : undefined, links, stats };
 }
 
 export async function hydratePassiveNodes(build: NormalizedBuild): Promise<NormalizedBuild> {
@@ -67,15 +68,27 @@ export async function hydratePassiveNodes(build: NormalizedBuild): Promise<Norma
   const version = build.treeVersion.replace(/^v/, "").replace(/\./g, "_");
   try {
     let lua = cache.get(version);
+    let usedVersion = version;
     if (!lua) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      try { const response = await fetch(treeUrl(version), { signal: controller.signal, headers: { "User-Agent": "PoB-Reality-Check/0.1 (+https://pob-reality-check.com)" } }); if (!response.ok) return build; lua = await response.text(); cache.set(version, lua); }
+      try {
+        const candidates = [...new Set([version, process.env.POB_TREE_FALLBACK_VERSION ?? "3_29"])];
+        for (const candidate of candidates) {
+          for (const url of [treeUrl(candidate), treeMirrorUrl(candidate)]) {
+            const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "PoB-Reality-Check/0.1 (+https://pob-reality-check.com)" } });
+            if (!response.ok) continue;
+            lua = await response.text(); usedVersion = candidate; cache.set(version, lua); break;
+          }
+          if (lua) break;
+        }
+        if (!lua) return { ...build, diagnostics: [...build.diagnostics, `Official passive tree data was unavailable for ${version}.`] };
+      }
       finally { clearTimeout(timeout); }
     }
     const groups = parseGroups(lua!);
     const constants = parseConstants(lua!);
-    const resolved = build.allocatedNodeIds.map((id) => parseNodeRecord(lua!, id, groups, constants) ?? { id, name: id, type: "unknown" as const, allocated: true });
+    const resolved = build.allocatedNodeIds.map((id) => parseNodeRecord(lua!, id, groups, constants) ?? { id, name: id, type: "unknown" as const, source: "unknown" as const, allocated: true });
     const allocatedIds = new Set(build.allocatedNodeIds);
     const treeGraph: TreeGraphNode[] = nodeIdsFromTree(lua!).map((id) => parseNodeRecord(lua!, id, groups, constants)).filter((node): node is PassiveNode & { id: string } => Boolean(node?.id)).map((node) => ({ ...node, allocated: allocatedIds.has(node.id) }));
     const names = new Map(build.passiveNodes.map((node, index) => [node.name, resolved[index]?.name ?? node.name]));
@@ -83,6 +96,6 @@ export async function hydratePassiveNodes(build: NormalizedBuild): Promise<Norma
     const details = new Map(resolved.map((node) => [node.name, node.stats?.join(" ") ?? ""]));
     const sources: SourceEntry[] = build.sources.map((source) => source.category === "passive" || source.category === "ascendancy" ? { ...source, name: names.get(source.name) ?? source.name, detail: `${source.detail} ${details.get(names.get(source.name) ?? source.name) ?? ""}`.trim() } : source);
     const sourceAssets: SourceAsset[] = build.sourceAssets.map((asset) => asset.category === "passive" || asset.category === "ascendancy" ? { ...asset, name: names.get(asset.name) ?? asset.name, detail: `${asset.detail} ${details.get(names.get(asset.name) ?? asset.name) ?? ""}`.trim() } : asset);
-    return { ...build, passiveNodes, sources, sourceAssets, treeGraph };
-  } catch { return build; }
+    return { ...build, passiveNodes, sources, sourceAssets, treeGraph, diagnostics: usedVersion === version ? build.diagnostics : [...build.diagnostics, `Passive tree preview used official fallback data ${usedVersion}; node contribution labels remain version-sensitive.`] };
+  } catch { return { ...build, diagnostics: [...build.diagnostics, `Passive tree hydration failed for ${version}; the report is showing only imported allocated nodes.`] }; }
 }

@@ -2,6 +2,8 @@
 
 The application currently uses standard npm dependencies and does not embed Path of Building source code. The importer reads PoB's exported XML, and the passive-tree resolver may fetch the matching official `tree.lua` data at runtime from the Path of Building Community repository. The Phase 3 service clones Path of Building Community at pinned commit `32d4c87bf7888bf82c01d9e544f3bbb30f01f267` during container build. The upstream README directs users to its `LICENSE` file for third-party licenses. The service must preserve upstream notices and document the exact commit, tree-data usage, and wrapper changes when distributed. Re-review this file whenever the commit changes.
 
+The application may fetch the generated `src/Data/Gems.lua` file from the same pinned PoB source to resolve gem tags, requirements, and attribute colors. The file identifies gem data as Grinding Gear Games content; it is used as runtime reference data and is not rewritten into the calculation engine.
+
 ## poe.ninja
 
 The report may use poe.ninja's documented `itemoverview` SkillGem endpoint to resolve optional gem artwork. The endpoint is treated as an optional, time-limited enrichment request and the application works without it. Character, profile, build, and Path of Building endpoints are not used because they are internal/unsupported surfaces; no poe.ninja character statistics are presented as automatically matched data. The poe.ninja site and API remain subject to their own terms and attribution expectations.

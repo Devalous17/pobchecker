@@ -1,0 +1,11 @@
+services:
+  pob-engine:
+    build:
+      context: .
+      args:
+        POB_COMMIT: 32d4c87bf7888bf82c01d9e544f3bbb30f01f267
+    ports:
+      - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid

@@ -3,7 +3,7 @@ export type Reliability = "Reliable" | "Conditional" | "Situational" | "Temporar
 
 export interface BuildIdentity { name: string; level?: number; className?: string; ascendancy?: string; version?: string; }
 export interface SourceEntry { category: "gem" | "item" | "passive" | "ascendancy" | "flask" | "configuration"; name: string; detail: string; }
-export interface PassiveNode { id?: string; name: string; type: "notable" | "keystone" | "ascendancy" | "passive" | "unknown"; allocated: boolean; x?: number; y?: number; links?: string[]; iconUrl?: string; stats?: string[]; }
+export interface PassiveNode { id?: string; name: string; type: "notable" | "keystone" | "ascendancy" | "passive" | "unknown"; allocated: boolean; x?: number; y?: number; links?: string[]; iconUrl?: string; stats?: string[]; source?: "core-tree" | "cluster-jewel" | "ascendancy" | "unknown"; }
 export interface TreeGraphNode extends PassiveNode { id: string; }
 export interface SourceAsset { category: "gem" | "item" | "flask" | "passive" | "ascendancy"; name: string; detail: string; iconUrl?: string; attributeColor: "int" | "dex" | "str" | "hybrid" | "unknown"; }
 export interface SkillGemInfo {
@@ -19,6 +19,8 @@ export interface SkillGemInfo {
   provided: boolean;
   enabled: boolean;
   includeInFullDPS: boolean;
+  metadataSource?: "pob" | "xml" | "unknown";
+  tags?: string[];
 }
 export interface SkillSetup {
   id: string;
@@ -59,6 +61,19 @@ export interface NormalizedBuild {
   allocatedNodeIds: string[];
   treeVersion?: string;
   treeGraph?: TreeGraphNode[];
+}
+export interface PoeNinjaComparison {
+  url: string;
+  account?: string;
+  character?: string;
+  league?: string;
+  level?: number;
+  className?: string;
+  skills?: string[];
+  items?: string[];
+  stats?: Record<string, number | string | null>;
+  source: "poe-ninja" | "unavailable";
+  diagnostics: string[];
 }
 export interface ConditionEvidence { kind: "configuration" | "skill" | "item" | "passive" | "ascendancy" | "xml"; label: string; detail: string; }
 export interface Condition {
