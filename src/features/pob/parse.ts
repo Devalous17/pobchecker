@@ -14,8 +14,19 @@ const attributeColor = (name: string, gem?: Record<string, unknown>): SourceAsse
   if (/b.*g|g.*b/.test(raw)) return "hybrid";
   return fallbackGemColors[name.replace(/ support$/i, "")] ?? "unknown";
 };
-// PoB's XML schema is intentionally open-ended; the parser preserves unknown attributes for later rules.
 /* eslint-disable @typescript-eslint/no-explicit-any */
+const itemText = (item: any) => String(typeof item === "string" ? item : item?.["#text"] ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+const itemEvidence = (item: any) => itemText(item).slice(0, 12).join(" ") || JSON.stringify(item).slice(0, 900);
+const itemDisplayName = (item: any) => {
+  const direct = String(item?.["@_name"] ?? item?.["@_nameSpec"] ?? item?.Name ?? item?.name ?? "").trim();
+  if (direct) return direct;
+  const lines = itemText(item);
+  const rarityIndex = lines.findIndex((line) => /^rarity\s*:/i.test(line));
+  const afterRarity = rarityIndex >= 0 ? lines[rarityIndex + 1] : "";
+  const baseType = String(item?.BaseType ?? item?.baseType ?? "").trim();
+  return afterRarity || baseType || lines.find((line) => !/^(rarity|item class|requirements|level|quality)\s*:/i.test(line)) || "";
+};
+// PoB's XML schema is intentionally open-ended; the parser preserves unknown attributes for later rules.
 export function parsePobXml(xml: string): NormalizedBuild {
   let doc: any; try { doc = parser.parse(xml); } catch { throw new Error("The PoB XML is malformed."); }
   const root = doc?.PathOfBuilding; if (!root) throw new Error("The export is missing its PathOfBuilding root.");
@@ -27,7 +38,13 @@ export function parsePobXml(xml: string): NormalizedBuild {
   const gemRows = actualSkillRows.length ? actualSkillRows.flatMap((skill: any) => list(skill?.Gem)) : legacySkillRows.flatMap((skill: any) => list(skill?.Gem).length ? list(skill?.Gem) : [skill]);
   const gemEntries = gemRows.map((x: any) => ({ name: String(x?.["@_nameSpec"] ?? x?.["@_name"] ?? "Unnamed gem"), color: attributeColor(String(x?.["@_nameSpec"] ?? x?.["@_name"] ?? ""), x) })).filter((entry) => entry.name !== "Unnamed gem");
   const skills = gemEntries.map((entry) => entry.name);
-  const items = list(root.Items?.Item).map((x: any) => String(x?.["@_name"] ?? "Unnamed item"));
+  const itemRows = list(root.Items?.Item);
+  const itemById = new Map(itemRows.map((item: any) => [String(item?.["@_id"] ?? ""), item]));
+  const activeItemSet = list(root.Items?.ItemSet).find((set: any) => String(set?.["@_id"] ?? "") === String(root.Items?.["@_activeItemSet"] ?? "1")) ?? list(root.Items?.ItemSet)[0];
+  const equippedSlots = list(activeItemSet?.Slot);
+  const equippedItems = equippedSlots.length ? equippedSlots.map((slot: any) => ({ item: itemById.get(String(slot?.["@_itemId"] ?? "")), slot: String(slot?.["@_name"] ?? "Equipped") })).filter((entry) => entry.item) : itemRows.map((item: any) => ({ item, slot: String(item?.["@_slot"] ?? "Equipped") }));
+  const itemEntries = equippedItems.map(({ item, slot }) => ({ name: itemDisplayName(item), slot, evidence: itemEvidence(item) })).filter((entry) => entry.name);
+  const items = itemEntries.map((entry) => entry.name);
   const configRows = [...list(config.Input), ...list(config.ConfigSet).flatMap((set: any) => list(set?.Input))];
   const configFields = configRows.map((x: any) => ({ name: String(x?.["@_name"] ?? "unknown"), value: String(x?.["@_value"] ?? x?.["@_boolean"] ?? x?.["@_number"] ?? x?.["@_string"] ?? "") }));
   const enabledConfigs = configFields.filter((field) => /^(true|1|yes)$/i.test(field.value)).map((field) => field.name);
@@ -39,14 +56,14 @@ export function parsePobXml(xml: string): NormalizedBuild {
   const nodes = passiveNodes.map((node) => node.name);
   const sources: SourceEntry[] = [
     ...skills.map((name) => ({ category: "gem" as const, name, detail: "Skill listed in the imported Skills section." })),
-    ...items.map((name) => ({ category: /flask/i.test(name) ? "flask" as const : "item" as const, name, detail: "Item listed in the imported Items section." })),
+    ...itemEntries.map(({ name, slot, evidence }) => ({ category: /flask/i.test(slot) || /flask/i.test(name) ? "flask" as const : "item" as const, name, detail: `Equipped in ${slot}. ${evidence}` })),
     ...nodes.map((name) => ({ category: /conviction of power/i.test(name) ? "ascendancy" as const : "passive" as const, name, detail: "Node listed in the imported tree data." })),
     ...(ascendancy ? [{ category: "ascendancy" as const, name: ascendancy, detail: "Ascendancy recorded on the build." }] : []),
     ...configFields.map((field) => ({ category: "configuration" as const, name: field.name, detail: `Configured value: ${field.value || "present"}` })),
   ];
   const sourceAssets: SourceAsset[] = [
     ...gemEntries.map((entry) => ({ category: "gem" as const, name: entry.name, detail: "Gem listed in the imported Skills section.", attributeColor: entry.color })),
-    ...items.map((name) => ({ category: /flask/i.test(name) ? "flask" as const : "item" as const, name, detail: "Item listed in the imported Items section.", attributeColor: "unknown" as const })),
+    ...itemEntries.map(({ name, slot, evidence }) => ({ category: /flask/i.test(slot) || /flask/i.test(name) ? "flask" as const : "item" as const, name, detail: `Equipped in ${slot}. ${evidence}`, attributeColor: "unknown" as const })),
     ...passiveNodes.filter((node) => node.type !== "passive").map((node) => ({ category: node.type === "ascendancy" ? "ascendancy" as const : "passive" as const, name: node.name, detail: "Allocated tree node in the imported build.", attributeColor: "unknown" as const })),
   ];
   const playerStats = new Map(list(build.PlayerStat).map((stat: any) => [String(stat?.["@_stat"] ?? ""), Number(stat?.["@_value"])]));

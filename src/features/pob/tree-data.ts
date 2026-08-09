@@ -1,4 +1,4 @@
-import type { NormalizedBuild, PassiveNode, SourceAsset, SourceEntry } from "@/src/types/domain";
+import type { NormalizedBuild, PassiveNode, SourceAsset, SourceEntry, TreeGraphNode } from "@/src/types/domain";
 
 const cache = new Map<string, string>();
 const treeUrl = (version: string) => `https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/dev/src/TreeData/${version.replace(".", "_")}/tree.lua`;
@@ -32,6 +32,14 @@ function parseConstants(lua: string): TreeConstants {
   return { skillsPerOrbit: parseNumberList(constants, "skillsPerOrbit"), orbitRadii: parseNumberList(constants, "orbitRadii") };
 }
 
+function nodeIdsFromTree(lua: string): string[] {
+  const nodesStart = lua.indexOf('\n    ["nodes"]= {');
+  const jewelsStart = lua.indexOf('\n    ["jewelSlots"]= {', nodesStart);
+  if (nodesStart < 0) return [];
+  const section = lua.slice(nodesStart, jewelsStart < 0 ? undefined : jewelsStart);
+  return [...section.matchAll(/\n\x20{8}\[(\d+)\]= \{/g)].map((match) => match[1]);
+}
+
 function parseNodeRecord(lua: string, id: string, groups: Map<number, GroupPosition>, constants: TreeConstants): PassiveNode | undefined {
   const start = lua.indexOf(`\n        [${id}]= {`);
   if (start < 0) return undefined;
@@ -49,7 +57,9 @@ function parseNodeRecord(lua: string, id: string, groups: Map<number, GroupPosit
   const angle = slots === 1 ? 0 : (orbitIndex / slots) * Math.PI * 2;
   const linksBlock = block.match(/\["out"\]= \{([\s\S]*?)\}/)?.[1] ?? "";
   const links = [...linksBlock.matchAll(/"(\d+)"/g)].map((item) => item[1]);
-  return { id, name, type, allocated: true, x: center ? center.x + Math.cos(angle) * radius : undefined, y: center ? center.y + Math.sin(angle) * radius : undefined, links };
+  const statsBlock = block.match(/\["stats"\]= \{([\s\S]*?)\}/)?.[1] ?? "";
+  const stats = [...statsBlock.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((item) => item[1]);
+  return { id, name, type, allocated: true, x: center ? center.x + Math.cos(angle) * radius : undefined, y: center ? center.y + Math.sin(angle) * radius : undefined, links, stats };
 }
 
 export async function hydratePassiveNodes(build: NormalizedBuild): Promise<NormalizedBuild> {
@@ -66,10 +76,13 @@ export async function hydratePassiveNodes(build: NormalizedBuild): Promise<Norma
     const groups = parseGroups(lua!);
     const constants = parseConstants(lua!);
     const resolved = build.allocatedNodeIds.map((id) => parseNodeRecord(lua!, id, groups, constants) ?? { id, name: id, type: "unknown" as const, allocated: true });
+    const allocatedIds = new Set(build.allocatedNodeIds);
+    const treeGraph: TreeGraphNode[] = nodeIdsFromTree(lua!).map((id) => parseNodeRecord(lua!, id, groups, constants)).filter((node): node is PassiveNode & { id: string } => Boolean(node?.id)).map((node) => ({ ...node, allocated: allocatedIds.has(node.id) }));
     const names = new Map(build.passiveNodes.map((node, index) => [node.name, resolved[index]?.name ?? node.name]));
     const passiveNodes = resolved;
-    const sources: SourceEntry[] = build.sources.map((source) => source.category === "passive" || source.category === "ascendancy" ? { ...source, name: names.get(source.name) ?? source.name } : source);
-    const sourceAssets: SourceAsset[] = build.sourceAssets.map((asset) => asset.category === "passive" || asset.category === "ascendancy" ? { ...asset, name: names.get(asset.name) ?? asset.name } : asset);
-    return { ...build, passiveNodes, sources, sourceAssets };
+    const details = new Map(resolved.map((node) => [node.name, node.stats?.join(" ") ?? ""]));
+    const sources: SourceEntry[] = build.sources.map((source) => source.category === "passive" || source.category === "ascendancy" ? { ...source, name: names.get(source.name) ?? source.name, detail: `${source.detail} ${details.get(names.get(source.name) ?? source.name) ?? ""}`.trim() } : source);
+    const sourceAssets: SourceAsset[] = build.sourceAssets.map((asset) => asset.category === "passive" || asset.category === "ascendancy" ? { ...asset, name: names.get(asset.name) ?? asset.name, detail: `${asset.detail} ${details.get(names.get(asset.name) ?? asset.name) ?? ""}`.trim() } : asset);
+    return { ...build, passiveNodes, sources, sourceAssets, treeGraph };
   } catch { return build; }
 }

@@ -50,4 +50,11 @@ describe("static condition auditor", () => {
     expect(build.sourceAssets.find((asset) => asset.name === "Inspiration")?.attributeColor).toBe("dex");
     expect(build.passiveNodes[0]).toMatchObject({ id: "25651", x: -100, y: 0 });
   });
+
+  it("keeps only active item-set slots and extracts names from PoB item blocks", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build/><Skills/><Items activeItemSet="1"><ItemSet id="1"><Slot name="Weapon 1" itemId="1"/><Slot name="Body Armour" itemId="2"/></ItemSet><Item id="1">Rarity: UNIQUE\nDoryani's Prototype\nPine Buckler</Item><Item id="2">Rarity: RARE\nMy Body Armour\nVaal Regalia</Item><Item id="3">Rarity: UNIQUE\nUnused Item\nClaw</Item></Items><Config/></PathOfBuilding>`);
+    expect(build.items).toEqual(["Doryani's Prototype", "My Body Armour"]);
+    expect(build.items).not.toContain("Unused Item");
+    expect(build.sources.find((source) => source.name === "Doryani's Prototype")?.detail).toContain("Weapon 1");
+  });
 });
