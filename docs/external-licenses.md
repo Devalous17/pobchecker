@@ -1,6 +1,6 @@
 # External licenses
 
-The application currently uses standard npm dependencies and does not embed Path of Building source code. The Phase 3 service clones Path of Building Community at pinned commit `32d4c87bf7888bf82c01d9e544f3bbb30f01f267` during container build. The upstream README directs users to its `LICENSE` file for third-party licenses. The service must preserve upstream notices and document the exact commit and wrapper changes when distributed. Re-review this file whenever the commit changes.
+The application currently uses standard npm dependencies and does not embed Path of Building source code. The importer reads PoB's exported XML, and the passive-tree resolver may fetch the matching official `tree.lua` data at runtime from the Path of Building Community repository. The Phase 3 service clones Path of Building Community at pinned commit `32d4c87bf7888bf82c01d9e544f3bbb30f01f267` during container build. The upstream README directs users to its `LICENSE` file for third-party licenses. The service must preserve upstream notices and document the exact commit, tree-data usage, and wrapper changes when distributed. Re-review this file whenever the commit changes.
 
 ## poe.ninja
 
