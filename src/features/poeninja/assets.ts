@@ -1,4 +1,4 @@
-import type { SourceAsset } from "@/src/types/domain";
+import type { NormalizedBuild, SourceAsset } from "@/src/types/domain";
 
 type GemLine = { name?: string; icon?: string };
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -20,5 +20,24 @@ export async function enrichGemAssets(assets: SourceAsset[]): Promise<SourceAsse
     const byName = new Map((payload.lines ?? []).filter((line) => line.name && line.icon).map((line) => [normalize(line.name!), line.icon!]));
     return assets.map((asset) => asset.category === "gem" ? { ...asset, iconUrl: byName.get(normalize(asset.name)) } : asset);
   } catch { return assets; }
+  finally { clearTimeout(timeout); }
+}
+
+/** Enriches the same imported gem records used by the grouped skill panel. */
+export async function enrichBuildAssets(build: NormalizedBuild): Promise<NormalizedBuild> {
+  const league = process.env.POE_NINJA_LEAGUE ?? "Keepers";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`https://poe.ninja/api/data/itemoverview?league=${encodeURIComponent(league)}&type=SkillGem&language=en`, { signal: controller.signal, headers: { "User-Agent": "PoB-Reality-Check/0.1 (+https://pob-reality-check.com)" } });
+    if (!response.ok) return build;
+    const payload = await response.json() as { lines?: GemLine[] };
+    const byName = new Map((payload.lines ?? []).filter((line) => line.name && line.icon).map((line) => [normalize(line.name!), line.icon!]));
+    return {
+      ...build,
+      sourceAssets: build.sourceAssets.map((asset) => asset.category === "gem" ? { ...asset, iconUrl: byName.get(normalize(asset.name)) ?? asset.iconUrl } : asset),
+      skillSetups: build.skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map((gem) => ({ ...gem, iconUrl: byName.get(normalize(gem.displayName ?? gem.name)) ?? gem.iconUrl })) })),
+    };
+  } catch { return build; }
   finally { clearTimeout(timeout); }
 }

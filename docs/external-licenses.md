@@ -7,3 +7,9 @@ The application currently uses standard npm dependencies and does not embed Path
 The report may use poe.ninja's documented `itemoverview` SkillGem endpoint to resolve optional gem artwork. The endpoint is treated as an optional, time-limited enrichment request and the application works without it. Character, profile, build, and Path of Building endpoints are not used because they are internal/unsupported surfaces; no poe.ninja character statistics are presented as automatically matched data. The poe.ninja site and API remain subject to their own terms and attribution expectations.
 
 Reference: https://github.com/ayberkgezer/poe.ninja-API-Document and https://poe.ninja/docs.
+
+## Path of Exile account and public-stash APIs
+
+The official Path of Exile API documents character endpoints separately from the public-stash stream. Public stashes describe market listings and are not a source for a character's equipped items or linked skills, so the report uses the imported PoB XML for those values. An explicit OAuth-backed character reference may be added later; the application must not infer an account or character from a `pobb.in` link. See https://www.pathofexile.com/developer/docs/reference.
+
+The `ayberkgezer/poe-api-manager` project is MIT-licensed and is an optional economy-data wrapper. It is not currently bundled as a runtime dependency; direct, time-limited poe.ninja requests keep the importer smaller and preserve graceful offline behavior. If it is incorporated later, retain its MIT notice and review its dependency licenses.
