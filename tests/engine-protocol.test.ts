@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { calculateWithEngine, EngineUnavailableError } from "../src/features/engine/client";
+import { calculateWithEngine, EngineUnavailableError, getEngineStatus } from "../src/features/engine/client";
 
 describe("headless engine boundary", () => {
   it("fails explicitly when no engine is configured", async () => {
     delete process.env.POB_ENGINE_URL;
     await expect(calculateWithEngine({ xml: "<PathOfBuilding/>", scenario: {} })).rejects.toBeInstanceOf(EngineUnavailableError);
+  });
+  it("reports the missing worker without probing an arbitrary URL", async () => {
+    delete process.env.POB_ENGINE_URL;
+    await expect(getEngineStatus()).resolves.toEqual({ state: "not-configured", message: "The isolated Path of Building worker is not configured for this environment." });
+  });
+  it("reports a healthy configured worker", async () => {
+    process.env.POB_ENGINE_URL = "http://engine/";
+    const fakeFetch = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+    await expect(getEngineStatus(fakeFetch)).resolves.toEqual({ state: "ready", message: "The isolated Path of Building worker is ready." });
+    delete process.env.POB_ENGINE_URL;
   });
   it("accepts only the typed scenario contract", async () => {
     const fakeFetch = async () => new Response(JSON.stringify({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {}, offence: { totalDPS: 10 }, defence: { totalEHP: null }, diagnostics: [] }), { status: 200, headers: { "content-type": "application/json" } });

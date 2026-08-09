@@ -14,4 +14,6 @@ $env:POB_ENGINE_URL="http://127.0.0.1:8080"; npm.cmd run dev
 
 The Next API returns a clear `503` until `POB_ENGINE_URL` points to a running service. No calculated values are shown when the service is unavailable. Sustained DPS is timeline-weighted from engine-returned states and is marked estimated whenever the timeline uses explicit duration assumptions.
 
+The hosted web app and the calculation worker are separate runtime components. Deploying the Next/Cloudflare site does not start Docker or LuaJIT, so the hosted environment must be given the HTTPS URL of a separately hosted worker through its `POB_ENGINE_URL` runtime variable before alternate scenarios can run. The scenario panel checks `/api/engine/status` and explains this state instead of presenting fabricated numbers.
+
 The wrapper and data files remain upstream-owned source. The service must preserve the upstream MIT license and third-party notices, and the commit pin must be reviewed whenever PoB is upgraded.
