@@ -18,4 +18,9 @@ describe("PoB skill and equipment import", () => {
     expect(build.sourceAssets.filter((asset) => asset.category === "item")).toHaveLength(1);
     expect(build.sourceAssets.filter((asset) => asset.category === "flask")).toHaveLength(1);
   });
+
+  it("ignores active slots that reference a missing item instead of crashing", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build/><Items activeItemSet="1"><ItemSet id="1"><Slot name="Body Armour" itemId="missing"/></ItemSet></Items></PathOfBuilding>`);
+    expect(build.equippedItems).toEqual([]);
+  });
 });

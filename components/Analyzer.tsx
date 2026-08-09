@@ -44,6 +44,7 @@ export function Analyzer() {
 
 function ReportView({ report, onReset }: { report: Report; onReset: () => void }) {
   const identity = report.build.identity;
+  const rawXml = typeof report.build.rawXml === "string" ? report.build.rawXml : "Raw XML was not returned by the importer. The structured report may be incomplete.";
   const offence = report.conditions.filter(c => c.category === "offence" || c.category === "both");
   const defence = report.conditions.filter(c => c.category === "defence" || c.category === "both");
   return <section className="report">
@@ -57,7 +58,7 @@ function ReportView({ report, onReset }: { report: Report; onReset: () => void }
     <div className="section columns"><ConditionGroup title="Offensive conditions" items={offence} /><ConditionGroup title="Defensive conditions" items={defence} /></div>
     <div className="section columns"><div className="card"><h3>Recommendations</h3>{report.recommendations.length ? <ul className="list">{report.recommendations.map(r => <li key={r.conditionId}><strong>{r.title}:</strong> {r.detail}</li>)}</ul> : <p className="muted">No evidence-backed findings yet.</p>}</div><div className="card"><h3>Why this rating</h3>{report.honesty.factors.length ? <ul className="list">{report.honesty.factors.map(f => <li key={f.label}><strong>{f.points}:</strong> {f.label}</li>)}</ul> : <p className="muted">No score deductions were found in the imported condition set.</p>}</div></div>
     <div className="section columns"><div className="card"><h3>Warnings</h3><ul className="list">{report.warnings.map(x => <li key={x}>{x}</li>)}</ul></div><div className="card"><h3>Assumptions</h3><ul className="list">{report.assumptions.map(x => <li key={x}>{x}</li>)}</ul></div></div>
-    <details className="diagnostics"><summary>Show raw diagnostic details</summary><pre>{report.build.rawXml.slice(0, 12000)}</pre></details><button className="example" onClick={onReset}>← Analyze another build</button>
+    <details className="diagnostics"><summary>Show raw diagnostic details</summary><pre>{rawXml.slice(0, 12000)}</pre></details><button className="example" onClick={onReset}>← Analyze another build</button>
   </section>;
 }
 
