@@ -23,4 +23,10 @@ describe("headless engine boundary", () => {
     expect(result.offence.totalDPS).toBe(10);
     delete process.env.POB_ENGINE_URL;
   });
+  it("surfaces calculation errors without mislabeling the worker offline", async () => {
+    process.env.POB_ENGINE_URL = "http://engine";
+    const fakeFetch = async () => new Response(JSON.stringify({ error: "Lua module dkjson could not be loaded" }), { status: 400, headers: { "content-type": "application/json" } });
+    await expect(calculateWithEngine({ xml: "<PathOfBuilding/>", scenario: {} }, fakeFetch)).rejects.toThrow("Lua module dkjson could not be loaded");
+    delete process.env.POB_ENGINE_URL;
+  });
 });

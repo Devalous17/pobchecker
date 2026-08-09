@@ -2,7 +2,7 @@
 
 The official `src/HeadlessWrapper.lua` bootstraps Path of Building without a GUI, supports standard Lua interpreters, and exposes `loadBuildFromXML` plus the loaded `build` object. PoB Reality Check wraps that API in `services/pob-engine/bridge.lua` and communicates over JSONL. The HTTP server starts a fresh Lua process per request so one build cannot contaminate another calculation state.
 
-The Docker image clones Path of Building at a pinned commit rather than copying the source into this repository. It installs LuaJIT, keeps the engine outside the Next.js process, enforces a request size limit, uses an allowlist of scenario configuration fields, and never evaluates user-provided Lua.
+The Docker image clones Path of Building at a pinned commit rather than copying the source into this repository. It installs LuaJIT plus Debian's `lua-dkjson` runtime dependency required by PoB's official wrapper, keeps the engine outside the Next.js process, enforces a request size limit, uses an allowlist of scenario configuration fields, and never evaluates user-provided Lua.
 
 Run the local worker with Docker from this directory:
 

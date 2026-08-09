@@ -40,10 +40,14 @@ export async function calculateWithEngine(input: EngineRequest, fetcher: typeof 
   } catch {
     throw new EngineUnavailableError("The PoB worker endpoint is configured, but it did not respond to the calculation request.", "unreachable");
   }
-  if (!response.ok) throw new EngineUnavailableError(`The PoB worker returned HTTP ${response.status} for the calculation request.`, "unreachable");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: unknown } | null;
+    const detail = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
+    throw new Error(`The PoB worker rejected the calculation request: ${detail}`);
+  }
   try {
     return engineResponseSchema.parse(await response.json());
   } catch {
-    throw new EngineUnavailableError("The PoB worker returned an invalid calculation response.", "unreachable");
+    throw new Error("The PoB worker returned an invalid calculation response.");
   }
 }
