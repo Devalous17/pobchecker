@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { parsePobbUrl, supportedPobbUrl } from "../src/features/import/url";
+describe("pobb.in URL validation", () => { it("supports public and user URLs", () => { expect(parsePobbUrl("https://pobb.in/abc-123/").buildId).toBe("abc-123"); expect(parsePobbUrl("https://pobb.in/u/name/abc").rawUrl).toBe("https://pobb.in/u/name/abc/raw"); }); it("rejects deceptive hosts", () => { expect(() => supportedPobbUrl.parse("https://pobb.in.evil.test/abc")).toThrow(); expect(() => supportedPobbUrl.parse("http://pobb.in/abc")).toThrow(); expect(() => supportedPobbUrl.parse("https://example.com/https://pobb.in/abc")).toThrow(); }); });
