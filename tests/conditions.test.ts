@@ -46,5 +46,8 @@ describe("static condition auditor", () => {
       "useEnduranceCharges",
     ]));
     expect(build.configFields).toContainEqual({ name: "sigilOfPowerStages", value: "4" });
+    expect(build.sourceAssets.find((asset) => asset.name === "Assassin's Mark")?.attributeColor).toBe("int");
+    expect(build.sourceAssets.find((asset) => asset.name === "Inspiration")?.attributeColor).toBe("dex");
+    expect(build.passiveNodes[0]).toMatchObject({ id: "25651", x: -100, y: 0 });
   });
 });

@@ -3,9 +3,9 @@ export type Reliability = "Reliable" | "Conditional" | "Situational" | "Temporar
 
 export interface BuildIdentity { name: string; level?: number; className?: string; ascendancy?: string; version?: string; }
 export interface SourceEntry { category: "gem" | "item" | "passive" | "ascendancy" | "flask" | "configuration"; name: string; detail: string; }
-export interface PassiveNode { name: string; type: "notable" | "keystone" | "ascendancy" | "passive" | "unknown"; allocated: boolean; }
+export interface PassiveNode { id?: string; name: string; type: "notable" | "keystone" | "ascendancy" | "passive" | "unknown"; allocated: boolean; x?: number; y?: number; links?: string[]; iconUrl?: string; }
 export interface SourceAsset { category: "gem" | "item" | "flask" | "passive" | "ascendancy"; name: string; detail: string; iconUrl?: string; attributeColor: "int" | "dex" | "str" | "hybrid" | "unknown"; }
-export interface ImportedStats { source: "pob-calcs" | "unavailable"; fullDps?: number; totalDps?: number; averageHit?: number; speed?: number; life?: number; energyShield?: number; mana?: number; armour?: number; evasion?: number; block?: number; spellBlock?: number; spellSuppression?: number; effectiveHealthPool?: number; physicalMaximumHit?: number; elementalMaximumHit?: number; chaosMaximumHit?: number; }
+export interface ImportedStats { source: "pob-calcs" | "unavailable"; fullDps?: number; totalDps?: number; averageDps?: number; averageHit?: number; speed?: number; life?: number; energyShield?: number; mana?: number; armour?: number; evasion?: number; block?: number; spellBlock?: number; spellSuppression?: number; effectiveHealthPool?: number; physicalMaximumHit?: number; elementalMaximumHit?: number; chaosMaximumHit?: number; }
 export interface NormalizedBuild {
   identity: BuildIdentity;
   rawXml: string;
