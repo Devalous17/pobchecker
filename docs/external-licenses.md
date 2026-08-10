@@ -16,4 +16,6 @@ The official Path of Exile API documents character endpoints separately from the
 
 The `ayberkgezer/poe-api-manager` project is MIT-licensed and is an optional economy-data wrapper. It is not currently bundled as a runtime dependency; direct, time-limited poe.ninja requests keep the importer smaller and preserve graceful offline behavior. If it is incorporated later, retain its MIT notice and review its dependency licenses.
 
-The worker image also installs Debian's `lua-dkjson` package, a standalone JSON module required by PoB's Lua modules and the worker bridge. Its Debian copyright and license files remain part of the container image; review the package license when changing the base image or dependency version.
+The worker image uses the official PoB runtime Lua modules from the pinned checkout, including `runtime/lua/xml.lua` and `runtime/lua/dkjson.lua`, rather than replacing PoB's XML implementation with an unrelated parser. Preserve the upstream Path of Building license and notices when distributing the worker image. The `dkjson.lua` file includes its own MIT notice; review upstream notices whenever the PoB commit changes.
+
+The Linux worker installs `luautf8` 0.2.1-1 from LuaRocks because the PoB checkout's runtime contains only the Windows `lua-utf8.dll`. The module is maintained at https://github.com/starwing/luautf8 and is MIT-licensed. Keep the version pinned and retain its notice when distributing the worker image.

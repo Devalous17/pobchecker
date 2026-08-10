@@ -6,10 +6,41 @@ dofile("HeadlessWrapper.lua")
 local allowed = {
   enemyIsBoss = true, usePowerCharges = true, useFrenzyCharges = true,
   useEnduranceCharges = true, conditionEnemyLowLife = true,
-  conditionRecentlyKilled = true, buffOnslaught = true, sigilOfPowerStages = true,
+  conditionKilledRecently = true, conditionRecentlyKilled = true,
+  conditionUsingFlask = true, buffOnslaught = true, sigilOfPowerStages = true,
   frostShieldStages = true, arcaneCloakUsedRecentlyCheck = true,
   conditionEnemyShocked = true, conditionEnemyChilled = true,
+  resetAllConditions = true,
 }
+
+local function isAllowedValue(key, value)
+  return (type(value) == "boolean" or type(value) == "number" or (key == "enemyIsBoss" and type(value) == "string"))
+end
+
+local function resetConditions(configSet)
+  local input = configSet.input or {}
+  for key, value in pairs(input) do
+    local isCondition = key == "enemyIsBoss"
+      or key:match("^[Cc]ondition")
+      or key:match("^[Bb]uff")
+      or key:match("^[Uu]se")
+      or key:match("^[Oo]verride")
+      or key:match("^[Mm]ultiplier")
+      or key:match("[Ss]tages?$")
+      or key:match("[Rr]ecently")
+      or key:match("[Cc]ursed")
+      or key:match("[Ee]xposure")
+      or key:match("^playerCursed")
+      or key:match("^map")
+    if isCondition then
+      if key == "enemyIsBoss" then input[key] = "None"
+      elseif type(value) == "boolean" then input[key] = false
+      elseif type(value) == "number" then input[key] = 0
+      else input[key] = "None" end
+    end
+  end
+  for _, customMod in pairs(configSet.customModsList or {}) do customMod.enabled = false end
+end
 
 local function numberOrNil(value)
   return type(value) == "number" and value or nil
@@ -20,8 +51,19 @@ local function calculate(request)
   loadBuildFromXML(request.xml, "PoB Reality Check")
   local configSet = build.configTab and build.configTab.configSets and build.configTab.configSets[build.configTab.activeConfigSetId]
   local inputs = configSet and configSet.input or {}
+  if request.scenario and request.scenario.resetAllConditions and configSet then resetConditions(configSet) end
   for key, value in pairs(request.scenario or {}) do
-    if allowed[key] and (type(value) == "boolean" or type(value) == "number") then inputs[key] = value end
+    if allowed[key] and isAllowedValue(key, value) then inputs[key] = value end
+  end
+  -- PoB renamed this input in current releases; accept the app's legacy alias too.
+  if request.scenario and request.scenario.conditionRecentlyKilled ~= nil then
+    inputs.conditionKilledRecently = request.scenario.conditionRecentlyKilled
+  end
+  -- BuildModList turns the active config inputs into the modifier lists consumed
+  -- by the calculation engine. Changing the XML-backed input table alone does
+  -- not recalculate those lists.
+  if build.configTab and build.configTab.BuildModList then
+    build.configTab:BuildModList()
   end
   if not build.calcsTab then error("PoB calculation tab did not initialise") end
   build.calcsTab:BuildOutput()

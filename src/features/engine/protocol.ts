@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 export const scenarioConfigSchema = z.object({
-  enemyIsBoss: z.boolean().optional(),
+  enemyIsBoss: z.enum(["None", "Boss", "Pinnacle", "Uber"]).optional(),
   usePowerCharges: z.boolean().optional(),
   useFrenzyCharges: z.boolean().optional(),
   useEnduranceCharges: z.boolean().optional(),
   conditionEnemyLowLife: z.boolean().optional(),
+  conditionKilledRecently: z.boolean().optional(),
+  conditionUsingFlask: z.boolean().optional(),
+  // Kept for older callers. The worker maps this alias to PoB's current key.
   conditionRecentlyKilled: z.boolean().optional(),
   buffOnslaught: z.boolean().optional(),
   sigilOfPowerStages: z.number().finite().min(0).max(10).optional(),
@@ -13,6 +16,7 @@ export const scenarioConfigSchema = z.object({
   arcaneCloakUsedRecentlyCheck: z.boolean().optional(),
   conditionEnemyShocked: z.boolean().optional(),
   conditionEnemyChilled: z.boolean().optional(),
+  resetAllConditions: z.boolean().optional(),
 }).strict();
 
 export const engineRequestSchema = z.object({

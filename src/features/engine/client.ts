@@ -21,9 +21,13 @@ export async function getEngineStatus(fetcher: typeof fetch = fetch): Promise<En
   const url = engineUrl();
   if (!url) return { state: "not-configured", message: "The isolated Path of Building worker is not configured for this environment." };
   try {
-    const response = await fetcher(`${url}/health`, { method: "GET", signal: AbortSignal.timeout(3_000) });
-    if (!response.ok) return { state: "unreachable", message: `The PoB worker responded with HTTP ${response.status}.` };
-    return { state: "ready", message: "The isolated Path of Building worker is ready." };
+      const response = await fetcher(`${url}/health`, { method: "GET", signal: AbortSignal.timeout(3_000) });
+      const body = await response.json().catch(() => null) as { engineReady?: unknown; diagnostics?: unknown } | null;
+      if (!response.ok || body?.engineReady !== true) {
+        const diagnostic = Array.isArray(body?.diagnostics) && typeof body.diagnostics[0] === "string" ? body.diagnostics[0] : `The PoB worker responded with HTTP ${response.status}.`;
+        return { state: "unreachable", message: `The PoB worker is not ready: ${diagnostic}` };
+      }
+      return { state: "ready", message: "The isolated Path of Building worker is ready." };
   } catch {
     return { state: "unreachable", message: "The PoB worker endpoint is configured, but it did not respond." };
   }

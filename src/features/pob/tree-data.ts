@@ -17,15 +17,16 @@ function parseGroups(lua: string): Map<number, GroupPosition> {
   const nodesStart = lua.indexOf('\n    ["nodes"]= {', groupsStart);
   if (groupsStart < 0 || nodesStart < 0) return new Map();
   const section = lua.slice(groupsStart, nodesStart);
-  const byNode = new Map<number, GroupPosition>();
+  const byGroup = new Map<number, GroupPosition>();
   const groupBlocks = [...section.matchAll(/\n {8}\[(\d+)\]= \{([\s\S]*?)(?=\n {8}\[\d+\]= \{|$)/g)];
   for (const match of groupBlocks) {
+    const groupId = Number(match[1]);
     const x = Number(match[2].match(/\["x"\]= (-?\d+(?:\.\d+)?)/)?.[1]);
     const y = Number(match[2].match(/\["y"\]= (-?\d+(?:\.\d+)?)/)?.[1]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    for (const nodeId of match[2].matchAll(/"(\d+)"/g)) byNode.set(Number(nodeId[1]), { x, y });
+    byGroup.set(groupId, { x, y });
   }
-  return byNode;
+  return byGroup;
 }
 
 function parseConstants(lua: string): TreeConstants {
@@ -48,7 +49,9 @@ function parseNodeRecord(lua: string, id: string, groups: Map<number, GroupPosit
   const block = lua.slice(start, end < 0 ? start + 3000 : end);
   const name = block.match(/\["name"\]= "((?:[^"\\]|\\.)*)"/)?.[1];
   if (!name) return undefined;
-  const type = /\["ascendancyName"\]=/.test(block) ? "ascendancy" : /\["isKeystone"\]= true/.test(block) ? "keystone" : /\["isNotable"\]= true/.test(block) ? "notable" : "passive";
+  // An ascendancy path contains small nodes as well as notables. The report’s
+  // compact source list is intentionally limited to the latter.
+  const type = /\["ascendancyName"\]=/.test(block) && /\["isNotable"\]= true/.test(block) ? "ascendancy" : /\["isKeystone"\]= true/.test(block) ? "keystone" : /\["isNotable"\]= true/.test(block) ? "notable" : "passive";
   const group = Number(block.match(/\["group"\]= (\d+)/)?.[1]);
   const orbit = Number(block.match(/\["orbit"\]= (\d+)/)?.[1]);
   const orbitIndex = Number(block.match(/\["orbitIndex"\]= (\d+)/)?.[1]);

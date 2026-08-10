@@ -48,7 +48,7 @@ describe("official passive tree hydration", () => {
     const build = parsePobXml(`<PathOfBuilding><Build/><Skills/><Items/><Config/><Tree><Spec id="1" treeVersion="3_29" nodes="1"/></Tree></PathOfBuilding>`);
     const hydrated = await hydratePassiveNodes(build);
     expect(hydrated.treeGraph).toHaveLength(2);
-    expect(hydrated.treeGraph?.find((node) => node.id === "1")).toMatchObject({ name: "Test Notable", allocated: true, stats: ["10% increased Damage"] });
+    expect(hydrated.treeGraph?.find((node) => node.id === "1")).toMatchObject({ name: "Test Notable", allocated: true, x: 100, y: 200, stats: ["10% increased Damage"] });
     expect(hydrated.treeGraph?.find((node) => node.id === "2")?.allocated).toBe(false);
   });
 });

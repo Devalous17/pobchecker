@@ -41,7 +41,7 @@ const itemTextLines = (item: any): string[] => {
   if (direct) return direct.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   return [item?.Rarity, item?.Name, item?.BaseType, item?.name, item?.baseType].map((value) => String(value ?? "").trim()).filter(Boolean);
 };
-const itemEvidence = (item: any) => itemTextLines(item).slice(0, 12).join(" ") || (JSON.stringify(item) ?? "").slice(0, 900);
+const itemEvidence = (item: any) => itemTextLines(item).slice(0, 24).join("\n") || (JSON.stringify(item) ?? "").slice(0, 1400);
 const itemDisplayName = (item: any) => {
   const direct = String(item?.["@_name"] ?? item?.["@_nameSpec"] ?? item?.Name ?? item?.name ?? "").trim();
   if (direct) return direct;

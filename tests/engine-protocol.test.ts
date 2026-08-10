@@ -12,14 +12,20 @@ describe("headless engine boundary", () => {
   });
   it("reports a healthy configured worker", async () => {
     process.env.POB_ENGINE_URL = "http://engine/";
-    const fakeFetch = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+    const fakeFetch = async () => new Response(JSON.stringify({ ok: true, engineReady: true }), { status: 200 });
     await expect(getEngineStatus(fakeFetch)).resolves.toEqual({ state: "ready", message: "The isolated Path of Building worker is ready." });
+    delete process.env.POB_ENGINE_URL;
+  });
+  it("does not report ready when Lua dependencies are missing", async () => {
+    process.env.POB_ENGINE_URL = "http://engine";
+    const fakeFetch = async () => new Response(JSON.stringify({ ok: false, engineReady: false, diagnostics: ["module 'xml' not found"] }), { status: 503 });
+    await expect(getEngineStatus(fakeFetch)).resolves.toEqual({ state: "unreachable", message: "The PoB worker is not ready: module 'xml' not found" });
     delete process.env.POB_ENGINE_URL;
   });
   it("accepts only the typed scenario contract", async () => {
     const fakeFetch = async () => new Response(JSON.stringify({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {}, offence: { totalDPS: 10 }, defence: { totalEHP: null }, diagnostics: [] }), { status: 200, headers: { "content-type": "application/json" } });
     process.env.POB_ENGINE_URL = "http://engine";
-    const result = await calculateWithEngine({ xml: "<PathOfBuilding/>", scenario: { enemyIsBoss: true } }, fakeFetch);
+    const result = await calculateWithEngine({ xml: "<PathOfBuilding/>", scenario: { enemyIsBoss: "Pinnacle" } }, fakeFetch);
     expect(result.offence.totalDPS).toBe(10);
     delete process.env.POB_ENGINE_URL;
   });
