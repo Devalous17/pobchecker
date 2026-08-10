@@ -65,6 +65,8 @@ const gemInfo = (gem: any, skill: any): SkillGemInfo | null => {
   const provided = asBool(gem?.["@_isProvided"] ?? gem?.["@_provided"]) || /item provided/i.test(String(gem?.["@_name"] ?? ""));
   const enabled = gem?.["@_enabled"] === undefined ? asBool(skill?.["@_enabled"] ?? true) : asBool(gem?.["@_enabled"]);
   const includeInFullDPS = asBool(gem?.["@_includeInFullDPS"] ?? skill?.["@_includeInFullDPS"]);
+  const skillPart = asNumber(gem?.["@_skillPart"] ?? skill?.["@_skillPart"]);
+  const skillCount = asNumber(gem?.["@_count"] ?? skill?.["@_count"]);
   const color = attributeColor(name, gem);
   const detail = [
     level === undefined ? undefined : `Level ${level}${quality === undefined ? "" : ` / ${quality}% quality`}`,
@@ -73,12 +75,13 @@ const gemInfo = (gem: any, skill: any): SkillGemInfo | null => {
     provided ? "Provided by an item or passive" : undefined,
     includeInFullDPS ? "Included in Full DPS" : undefined,
   ].filter(Boolean).join(" · ") || "Imported from the PoB skill setup.";
-  return { name, displayName, level, quality, attributeColor: color, detail, support, trigger, provided, enabled, includeInFullDPS };
+  return { name, displayName, level, quality, attributeColor: color, detail, support, trigger, provided, enabled, includeInFullDPS, skillPart, skillCount };
 };
 
 const parseSkillSetups = (root: any): SkillSetup[] => {
   const sets = list(root.Skills?.SkillSet);
   const setEntries = sets.length ? sets : [{ "@_id": "legacy", Skill: list(root.Skills?.Skill) }];
+  let engineIndex = 0;
   return setEntries.flatMap((set: any, setIndex) => {
     const skills = list(set?.Skill);
     const setupRows = skills.length ? skills : list(root.Skills?.Skill);
@@ -88,7 +91,8 @@ const parseSkillSetups = (root: any): SkillSetup[] => {
       const slot = String(skill?.["@_slot"] ?? skill?.["@_itemSlot"] ?? "").trim() || undefined;
       const explicitLabel = String(skill?.["@_label"] ?? skill?.["@_name"] ?? "").trim();
       const label = explicitLabel || slot || `Skill setup ${set?.["@_id"] ?? setIndex + 1}.${skillIndex + 1}`;
-      return { id: `${set?.["@_id"] ?? setIndex + 1}-${skillIndex + 1}`, label, slot, enabled: skill?.["@_enabled"] === undefined ? true : asBool(skill?.["@_enabled"]), includeInFullDPS: asBool(skill?.["@_includeInFullDPS"]) || gems.some((gem) => gem.includeInFullDPS), gems } satisfies SkillSetup;
+      engineIndex += 1;
+      return { id: `${set?.["@_id"] ?? setIndex + 1}-${skillIndex + 1}`, engineIndex, label, slot, enabled: skill?.["@_enabled"] === undefined ? true : asBool(skill?.["@_enabled"]), includeInFullDPS: asBool(skill?.["@_includeInFullDPS"]) || gems.some((gem) => gem.includeInFullDPS), mainActiveSkill: asBool(skill?.["@_mainActiveSkill"]), gems } satisfies SkillSetup;
     }).filter((setup) => setup.gems.length);
   });
 };
@@ -145,9 +149,68 @@ export function parsePobXml(xml: string): NormalizedBuild {
     ...passiveNodes.filter((node) => node.type !== "passive").map((node) => ({ category: node.type === "ascendancy" ? "ascendancy" as const : "passive" as const, name: node.name, detail: "Allocated tree node in the imported build.", attributeColor: "unknown" as const })),
   ];
   const playerStats = new Map(list(build.PlayerStat).map((stat: any) => [String(stat?.["@_stat"] ?? ""), Number(stat?.["@_value"])]));
-  const fullDpsSkill = root.Build?.FullDPSSkill?.["@_source"] ?? root.Build?.FullDPSSkill?.["@_name"];
-  const mainSkill = fullDpsSkill ? String(fullDpsSkill).replace(/^\d+x\s+/i, "") : String(skillSetups.find((setup) => setup.includeInFullDPS)?.gems[0]?.name ?? skills[0] ?? "");
-  const importedStats: ImportedStats = { source: playerStats.size ? "pob-calcs" : "unavailable", fullDps: playerStats.get("FullDPS"), totalDps: playerStats.get("TotalDPS"), averageDps: playerStats.get("AverageDPS"), averageHit: playerStats.get("AverageHit"), speed: playerStats.get("Speed"), life: playerStats.get("Life"), energyShield: playerStats.get("EnergyShield"), mana: playerStats.get("Mana"), armour: playerStats.get("Armour"), evasion: playerStats.get("Evasion"), block: playerStats.get("EffectiveBlockChance"), spellBlock: playerStats.get("EffectiveSpellBlockChance"), spellSuppression: playerStats.get("EffectiveSpellSuppressionChance"), effectiveHealthPool: playerStats.get("TotalEHP"), physicalMaximumHit: playerStats.get("PhysicalMaximumHitTaken"), elementalMaximumHit: Math.max(playerStats.get("FireMaximumHitTaken") ?? 0, playerStats.get("ColdMaximumHitTaken") ?? 0, playerStats.get("LightningMaximumHitTaken") ?? 0) || undefined, chaosMaximumHit: playerStats.get("ChaosMaximumHitTaken") };
+  const fullDpsNode = root.Build?.FullDPSSkill;
+  const fullDpsSkill = typeof fullDpsNode === "string"
+    ? fullDpsNode
+    : [fullDpsNode?.["@_source"], fullDpsNode?.["@_name"], fullDpsNode?.["@_stat"], fullDpsNode?.["#text"]].find((value) => String(value ?? "").trim());
+  const fullDpsName = String(fullDpsSkill ?? "").replace(/^\d+x\s+/i, "").trim();
+  const activeCandidates = skillSetups.flatMap((setup) => setup.gems.filter((gem) => !gem.support && !gem.provided && !gem.trigger).map((gem) => gem.displayName ?? gem.name));
+  const fullDpsSetupSkill = skillSetups.find((setup) => setup.includeInFullDPS)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
+  const mainActiveSkill = skillSetups.find((setup) => setup.mainActiveSkill)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
+  // The socket group marked includeInFullDPS is the strongest signal for the
+  // displayed damage skill. Some exports retain an old FullDPSSkill value for
+  // a utility skill (for example Decoy Totem) even while another setup is
+  // marked as the configured damage setup.
+  const mainSkill = fullDpsSetupSkill?.name || fullDpsName || mainActiveSkill?.name || activeCandidates[0] || skills[0] || "";
+  const stat = (...names: string[]) => names.map((name) => playerStats.get(name)).find((value) => value !== undefined);
+  const importedStats: ImportedStats = {
+    source: playerStats.size ? "pob-calcs" : "unavailable",
+    fullDps: stat("FullDPS"),
+    totalDps: stat("TotalDPS"),
+    totalDotDps: stat("TotalDotDPS", "WithDotDPS", "TotalDot"),
+    combinedDps: stat("CombinedDPS"),
+    averageDps: stat("AverageDPS"),
+    averageHit: stat("AverageHit", "AverageDamage"),
+    speed: stat("Speed"),
+    life: stat("Life"),
+    energyShield: stat("EnergyShield"),
+    mana: stat("Mana"),
+    armour: stat("Armour"),
+    evasion: stat("Evasion"),
+    ward: stat("Ward"),
+    block: stat("EffectiveBlockChance", "BlockChance"),
+    spellBlock: stat("EffectiveSpellBlockChance", "SpellBlockChance"),
+    spellSuppression: stat("EffectiveSpellSuppressionChance", "SpellSuppressionChance"),
+    fireResistance: stat("FireResist", "FireResistance", "FireResistOverCap"),
+    coldResistance: stat("ColdResist", "ColdResistance", "ColdResistOverCap"),
+    lightningResistance: stat("LightningResist", "LightningResistance", "LightningResistOverCap"),
+    chaosResistance: stat("ChaosResist", "ChaosResistance", "ChaosResistOverCap"),
+    effectiveHealthPool: stat("TotalEHP"),
+    physicalMaximumHit: stat("PhysicalMaximumHitTaken"),
+    fireMaximumHit: stat("FireMaximumHitTaken"),
+    coldMaximumHit: stat("ColdMaximumHitTaken"),
+    lightningMaximumHit: stat("LightningMaximumHitTaken"),
+    elementalMaximumHit: Math.max(playerStats.get("FireMaximumHitTaken") ?? 0, playerStats.get("ColdMaximumHitTaken") ?? 0, playerStats.get("LightningMaximumHitTaken") ?? 0) || undefined,
+    chaosMaximumHit: stat("ChaosMaximumHitTaken"),
+    lifeRegen: stat("LifeRegen", "LifeRegenRecovery", "NetLifeRegen"),
+    lifeLeechRate: stat("LifeLeechRate", "LifeLeechGainRate"),
+    energyShieldRecoveryCap: stat("EnergyShieldRecoveryCap"),
+    energyShieldRegen: stat("EnergyShieldRegen", "EnergyShieldRegenRecovery", "NetEnergyShieldRegen"),
+    energyShieldLeechRate: stat("EnergyShieldLeechRate", "EnergyShieldLeechGainRate"),
+    manaRegen: stat("ManaRegen", "ManaRegenRecovery", "NetManaRegen"),
+    manaLeechRate: stat("ManaLeechRate", "ManaLeechGainRate"),
+    lifeRecoveryRate: stat("LifeRecoveryRate", "LifeRecharge"),
+    energyShieldRecoveryRate: stat("EnergyShieldRecoveryRate", "EnergyShieldRecoveryCap"),
+    manaRecoveryRate: stat("ManaRecoveryRate", "ManaRegenRecovery"),
+    lifeRecoup: stat("LifeRecoup"),
+    manaRecoup: stat("ManaRecoup"),
+    lifeOnHit: stat("LifeOnHit"),
+    manaOnHit: stat("ManaOnHit"),
+    lifeOnKill: stat("LifeOnKill"),
+    manaOnKill: stat("ManaOnKill"),
+    energyShieldOnHit: stat("EnergyShieldOnHit"),
+    energyShieldOnKill: stat("EnergyShieldOnKill"),
+  };
   const identityName = String(build?.["@_name"] ?? "").trim() || mainSkill || "Unnamed build";
-  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
+  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
 }

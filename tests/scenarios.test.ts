@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { weightedAverageDps } from "../src/features/scenarios/timeline";
-import { buildScenarioReport } from "../src/features/scenarios/report";
+import { buildScenarioReport, highestValidResult, scenarioDps } from "../src/features/scenarios/report";
 import { buildScenarioProfiles } from "../src/features/scenarios/model";
 import { parsePobXml } from "../src/features/pob/parse";
 import { detectConditions } from "../src/features/conditions/registry";
@@ -16,6 +16,22 @@ describe("combat scenarios", () => {
     expect(report.sustained.value).toBeNull();
     expect(report.peak.status).toBe("unavailable");
   });
+  it("uses TotalDotDPS for damage-over-time-only builds", () => {
+    const result = {
+      engine: { name: "test", version: "1", commit: "x" },
+      calculated: true,
+      scenario: {},
+      offence: { totalDPS: 0, totalDot: 14_800_000, fullDPS: 0 },
+      defence: {},
+      diagnostics: [],
+    };
+    expect(scenarioDps(result)).toEqual({ value: 14_800_000, source: "TotalDotDPS" });
+    expect(buildScenarioReport({ configured: result, unconditional: result, peak: result }, 30).configured.value).toBe(14_800_000);
+  });
+  it("chooses the highest boss-valid state instead of the imported configured state", () => {
+    const result = (dps: number) => ({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {}, offence: { totalDPS: dps }, defence: {}, diagnostics: [] });
+    expect(scenarioDps(highestValidResult({ peak: result(5), burst: result(6), initial: result(4), sustained: result(3) })!).value).toBe(6);
+  });
   it("builds distinct evidence-based profiles without inventing unsupported Frenzy Charges", () => {
     const build = parsePobXml(examplePobFixture);
     const profiles = buildScenarioProfiles(build, detectConditions(build));
@@ -26,8 +42,12 @@ describe("combat scenarios", () => {
     expect(byId.initial.config.conditionEnemyLowLife).toBe(false);
     expect(byId.peak.config.useFrenzyCharges).toBe(false);
     expect(byId.peak.config.conditionEnemyLowLife).toBe(true);
+    expect(byId.peak.config.skillPartCalcs).toBe(2);
+    expect(byId.peak.config.skillCount).toBe(4);
     expect(byId.mapping.config.enemyIsBoss).toBe("None");
     expect(byId.unconditional.config.resetAllConditions).toBe(true);
     expect(byId.unconditional.config.enemyIsBoss).toBe("None");
+    expect(byId.sustained.config.enemyIsBoss).toBe("Pinnacle");
+    expect(byId.sustained.config.resetAllConditions).toBe(true);
   });
 });

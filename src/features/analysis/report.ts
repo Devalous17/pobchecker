@@ -1,5 +1,7 @@
 import type { Condition, NormalizedBuild } from "@/src/types/domain";
 import { calculateHonestyScore } from "./honesty";
+import { analyzeBuildLayers } from "./layers";
+import { calculateBuildQuality } from "./quality";
 
 export function buildReport(build: NormalizedBuild, conditions: Condition[]) {
   const unverified = conditions.filter((condition) => condition.reliability === "Unverified").length;
@@ -14,10 +16,12 @@ export function buildReport(build: NormalizedBuild, conditions: Condition[]) {
   });
   const sourceSummary = { gems: build.sources.filter((source) => source.category === "gem").length, items: build.sources.filter((source) => source.category === "item").length, flasks: build.sources.filter((source) => source.category === "flask").length, passives: build.sources.filter((source) => source.category === "passive").length, ascendancies: build.sources.filter((source) => source.category === "ascendancy").length };
   const honesty = calculateHonestyScore(build, conditions);
+  const quality = calculateBuildQuality(build, conditions);
+  const layers = analyzeBuildLayers(build, conditions, quality);
   const visibleConditions = conditions.filter((condition) => condition.availability !== "unavailable" && condition.reliability !== "Unverified");
   // Core-tree notables are already visible in the tree graph. Keep the compact
   // source summary focused on the ascendancy nodes that materially define the
   // character, rather than presenting a noisy list of every allocated notable.
   const topNotables = [...new Map(build.passiveNodes.filter((node) => node.type === "ascendancy").map((node) => [node.name, node])).values()].slice(0, 5);
-  return { build, conditions: visibleConditions, auditedConditions: conditions, sourceSummary, honesty, topNotables, recommendations, confidence: unverified ? "Low" : conditions.length ? "Medium" : "Unknown", audit: { persistent, conditional, unverified, status: unverified ? "Needs review" : "Evidence-backed" }, warnings: ["Imported PoB values are exact snapshots; alternate combat states are calculated separately by the isolated worker and carry their own status and confidence.", ...(unverified ? [`${unverified} configured condition(s) have no source evidence in the imported data. They are kept in the audit but hidden from the main conditional-effects list.`] : []), ...build.diagnostics], assumptions: ["The imported XML is the user-selected Path of Building state.", "A source-backed condition can still be temporary or encounter-limited.", "Configured conditions are not treated as guaranteed gameplay availability."] };
+  return { build, conditions: visibleConditions, auditedConditions: conditions, sourceSummary, honesty, quality, layers, topNotables, recommendations, confidence: unverified ? "Low" : conditions.length ? "Medium" : "Unknown", audit: { persistent, conditional, unverified, status: unverified ? "Needs review" : "Evidence-backed" }, warnings: ["Imported PoB values are exact snapshots; alternate combat states are calculated separately by the isolated worker and carry their own status and confidence.", ...(unverified ? [`${unverified} configured condition(s) have no source evidence in the imported data. They are kept in the audit but hidden from the main conditional-effects list.`] : []), ...build.diagnostics], assumptions: ["The imported XML is the user-selected Path of Building state.", "A source-backed condition can still be temporary or encounter-limited.", "Configured conditions are not treated as guaranteed gameplay availability.", ...quality.assumptions, ...layers.assumptions] };
 }

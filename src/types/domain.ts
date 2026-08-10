@@ -1,5 +1,6 @@
 export type Confidence = "High" | "Medium" | "Low" | "Unknown";
 export type Reliability = "Reliable" | "Conditional" | "Situational" | "Temporary" | "Mapping-only" | "Ramp-dependent" | "Unverified" | "Invalid";
+export type QualityGrade = "S" | "A" | "B" | "C" | "D" | "E" | "F";
 
 export interface BuildIdentity { name: string; level?: number; className?: string; ascendancy?: string; version?: string; }
 export interface SourceEntry { category: "gem" | "item" | "passive" | "ascendancy" | "flask" | "configuration"; name: string; detail: string; }
@@ -21,13 +22,17 @@ export interface SkillGemInfo {
   includeInFullDPS: boolean;
   metadataSource?: "pob" | "xml" | "unknown";
   tags?: string[];
+  skillPart?: number;
+  skillCount?: number;
 }
 export interface SkillSetup {
   id: string;
+  engineIndex?: number;
   label: string;
   slot?: string;
   enabled: boolean;
   includeInFullDPS: boolean;
+  mainActiveSkill?: boolean;
   gems: SkillGemInfo[];
 }
 export interface EquippedItemInfo {
@@ -42,9 +47,100 @@ export interface EquippedItemInfo {
   links?: string;
   isFlask: boolean;
 }
-export interface ImportedStats { source: "pob-calcs" | "unavailable"; fullDps?: number; totalDps?: number; averageDps?: number; averageHit?: number; speed?: number; life?: number; energyShield?: number; mana?: number; armour?: number; evasion?: number; block?: number; spellBlock?: number; spellSuppression?: number; effectiveHealthPool?: number; physicalMaximumHit?: number; elementalMaximumHit?: number; chaosMaximumHit?: number; }
+export interface ImportedStats {
+  source: "pob-calcs" | "unavailable";
+  fullDps?: number;
+  totalDps?: number;
+  totalDotDps?: number;
+  combinedDps?: number;
+  averageDps?: number;
+  averageHit?: number;
+  speed?: number;
+  life?: number;
+  energyShield?: number;
+  mana?: number;
+  armour?: number;
+  evasion?: number;
+  ward?: number;
+  block?: number;
+  spellBlock?: number;
+  spellSuppression?: number;
+  fireResistance?: number;
+  coldResistance?: number;
+  lightningResistance?: number;
+  chaosResistance?: number;
+  effectiveHealthPool?: number;
+  physicalMaximumHit?: number;
+  fireMaximumHit?: number;
+  coldMaximumHit?: number;
+  lightningMaximumHit?: number;
+  elementalMaximumHit?: number;
+  chaosMaximumHit?: number;
+  lifeRegen?: number;
+  lifeLeechRate?: number;
+  energyShieldRecoveryCap?: number;
+  energyShieldRegen?: number;
+  energyShieldLeechRate?: number;
+  manaRegen?: number;
+  manaLeechRate?: number;
+  lifeRecoveryRate?: number;
+  energyShieldRecoveryRate?: number;
+  manaRecoveryRate?: number;
+  lifeRecoup?: number;
+  manaRecoup?: number;
+  lifeOnHit?: number;
+  manaOnHit?: number;
+  lifeOnKill?: number;
+  manaOnKill?: number;
+  energyShieldOnHit?: number;
+  energyShieldOnKill?: number;
+}
+export interface QualityRating { score: number | null; grade: QualityGrade | "?"; label: string; confidence: Confidence; basis: string[]; }
+export interface BuildQuality { overall: QualityRating; offence: QualityRating; defence: QualityRating; assumptions: string[]; limitations: string[]; }
+export type LayerSide = "offence" | "defence";
+export type LayerSnapshotState = "baseline" | "typical" | "peak";
+export interface LayerSnapshot {
+  state: LayerSnapshotState;
+  value?: number;
+  status: "calculated" | "unavailable";
+  source: string;
+  conditions: string[];
+  assumptions: string[];
+}
+export interface BuildLayerFinding {
+  id: string;
+  side: LayerSide;
+  category: string;
+  name: string;
+  rating: QualityRating;
+  evidence: string[];
+  conditions: string[];
+  weaknesses: string[];
+  verdict: string;
+  snapshots: LayerSnapshot[];
+  comparisons?: {
+    name: string;
+    withDps: number | null;
+    withoutDps: number | null;
+    deltaDps: number | null;
+    status: "calculated" | "estimated" | "unavailable";
+    confidence: Confidence;
+    explanation: string;
+  }[];
+}
+export interface BuildLayerGroup {
+  rating: QualityRating;
+  findings: BuildLayerFinding[];
+}
+export interface BuildLayerAnalysis {
+  offence: BuildLayerGroup;
+  defence: BuildLayerGroup;
+  assumptions: string[];
+  limitations: string[];
+}
 export interface NormalizedBuild {
   identity: BuildIdentity;
+  mainSkill?: string;
   rawXml: string;
   sections: string[];
   enabledConfigs: string[];

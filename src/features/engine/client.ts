@@ -49,9 +49,11 @@ export async function calculateWithEngine(input: EngineRequest, fetcher: typeof 
     const detail = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
     throw new Error(`The PoB worker rejected the calculation request: ${detail}`);
   }
-  try {
-    return engineResponseSchema.parse(await response.json());
-  } catch {
-    throw new Error("The PoB worker returned an invalid calculation response.");
+  const body = await response.json().catch(() => null);
+  const parsed = engineResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    const fields = parsed.error.issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`).join("; ");
+    throw new Error(`The PoB worker returned an invalid calculation response${fields ? ` (${fields})` : "."}`);
   }
+  return parsed.data;
 }

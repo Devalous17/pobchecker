@@ -29,6 +29,12 @@ describe("headless engine boundary", () => {
     expect(result.offence.totalDPS).toBe(10);
     delete process.env.POB_ENGINE_URL;
   });
+  it("accepts selecting an imported active skill group", async () => {
+    const fakeFetch = async () => new Response(JSON.stringify({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: { skillName: "Summon Skeletons", skillGroupIndex: 2 }, offence: { totalDPS: 100 }, defence: {}, diagnostics: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    process.env.POB_ENGINE_URL = "http://engine";
+    await expect(calculateWithEngine({ xml: "<PathOfBuilding/>", scenario: { skillName: "Summon Skeletons", skillGroupIndex: 2 } }, fakeFetch)).resolves.toMatchObject({ offence: { totalDPS: 100 } });
+    delete process.env.POB_ENGINE_URL;
+  });
   it("surfaces calculation errors without mislabeling the worker offline", async () => {
     process.env.POB_ENGINE_URL = "http://engine";
     const fakeFetch = async () => new Response(JSON.stringify({ error: "Lua module dkjson could not be loaded" }), { status: 400, headers: { "content-type": "application/json" } });

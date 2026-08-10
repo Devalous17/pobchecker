@@ -9,4 +9,4 @@ export function weightedAverageDps(states: TimelineState[], encounterSeconds: nu
 }
 
 export function metricUnavailable(explanation: string, assumptions: string[] = []): ScenarioMetric { return { value: null, unit: "dps", status: "unavailable", confidence: "Unknown", includedConditions: [], assumptions, explanation }; }
-export function metricFromEngine(value: number | null | undefined, includedConditions: string[], assumptions: string[], explanation: string): ScenarioMetric { return value === null || value === undefined ? metricUnavailable("The engine did not return this value.", assumptions) : { value, unit: "dps", status: "calculated", confidence: "High", includedConditions, assumptions, explanation }; }
+export function metricFromEngine(value: number | null | undefined, includedConditions: string[], assumptions: string[], explanation: string, defence?: ScenarioMetric["defence"]): ScenarioMetric { return value === null || value === undefined ? { ...metricUnavailable("The engine did not return this value.", assumptions), defence } : { value, unit: "dps", status: "calculated", confidence: "High", includedConditions, assumptions, explanation, defence }; }
