@@ -1,2 +1,5 @@
 import { Analyzer } from "@/components/Analyzer";
-export default function Home(){return <main className="app-shell"><div className="utility-bar"><span>pob-reality-check.com</span><nav><button aria-label="Toggle theme">◐</button></nav></div><header className="mainbar"><div className="brand-lockup"><div className="brand-crest">PRC</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">Build quality &amp; reality check</div></div></div><nav className="main-tabs" aria-label="Main navigation"><a className="active" href="#analyze">Analyze</a></nav><div className="header-actions"><button className="metal-button">POE 1</button><button className="icon-button" aria-label="Settings">⚙</button></div></header><div className="tool-strip"><span className="tool-label">BUILD ANALYZER</span><span className="tool-status">● LOCAL PROTOTYPE</span><span className="tool-spacer"/><span className="tool-hint">Overview · Damage · Defence · Loadout</span></div><Analyzer /></main>}
+
+export default function Home() {
+  return <main className="app-shell"><Analyzer /></main>;
+}

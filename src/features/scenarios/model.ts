@@ -7,7 +7,7 @@ export type ResultStatus = "calculated" | "estimated" | "unavailable";
 export type ScenarioConfig = Record<string, boolean | number | string | string[]>;
 export interface ScenarioProfile { id: ScenarioId; label: string; purpose: string; config: ScenarioConfig; durationSeconds?: number; }
 export interface TimelineState { id: string; label: string; durationSeconds: number; dps: number | null; source: "engine" | "estimate" | "unavailable"; assumptions: string[]; }
-export interface ScenarioMetric { value: number | null; unit: "dps" | "seconds" | "percent"; status: ResultStatus; confidence: "High" | "Medium" | "Low" | "Unknown"; includedConditions: string[]; assumptions: string[]; explanation: string; defence?: EngineResponse["defence"]; }
+export interface ScenarioMetric { value: number | null; unit: "dps" | "seconds" | "percent"; status: ResultStatus; confidence: "High" | "Medium" | "Low" | "Unknown"; includedConditions: string[]; assumptions: string[]; explanation: string; damageChannel?: string; defence?: EngineResponse["defence"]; }
 export interface ScenarioContribution { name: string; withDps: number | null; withoutDps: number | null; deltaDps: number | null; status: ResultStatus; confidence: "High" | "Medium" | "Low" | "Unknown"; explanation: string; }
 export interface AutoConfigurationHint { id: string; label: string; value: string; reason: string; confidence: "High" | "Medium" | "Low"; }
 export interface ScenarioReport { encounterSeconds: number; configured: ScenarioMetric; unconditional: ScenarioMetric; recommended?: ScenarioMetric; autoConfiguration?: AutoConfigurationHint[]; peak: ScenarioMetric; burst: ScenarioMetric; initial: ScenarioMetric; sustained: ScenarioMetric; mapping: ScenarioMetric; timeline: TimelineState[]; curseContributions?: ScenarioContribution[]; supportContributions?: ScenarioContribution[]; engine?: EngineResponse["engine"]; }
@@ -20,7 +20,7 @@ const hasKnownCondition = (conditions: Condition[], id: string) => {
 };
 const sourcePatterns: Record<string, RegExp> = {
   "enemy-low-life": /punishment|culling strike/i,
-  "enemy-shocked": /shock|shocked|storm burst|lightning damage/i,
+  "enemy-shocked": /shock|shocked|lightning damage/i,
   "enemy-chilled": /chill|chilled|frost shield|cold damage/i,
   "totem-present": /totem|totems/i,
   "recently-summoned-totem": /totem|totems/i,
@@ -55,7 +55,7 @@ const curseFields: Record<string, string> = {
   "temporal chains": "playerCursedWithTemporalChains", despair: "playerCursedWithDespair", enfeeble: "playerCursedWithEnfeeble", "warlord's mark": "playerCursedWithWarlordsMark",
 };
 
-function recommendedConfiguration(build: NormalizedBuild, conditions: Condition[]): { config: ScenarioConfig; hints: AutoConfigurationHint[] } {
+function recommendedConfiguration(build: NormalizedBuild, conditions: Condition[], disabledIds: string[] = []): { config: ScenarioConfig; hints: AutoConfigurationHint[] } {
   const config = sourcedCombatState(build, conditions, { includeBoss: true });
   const hints: AutoConfigurationHint[] = [];
   const add = (id: string, label: string, value: string, reason: string, confidence: AutoConfigurationHint["confidence"]) => hints.push({ id, label, value, reason, confidence });
@@ -74,21 +74,24 @@ function recommendedConfiguration(build: NormalizedBuild, conditions: Condition[
   if (hasSourceOrEvidence(build, conditions, "enemy-unnerved")) { config.conditionEnemyUnnerved = true; add("unnerve", "Enemy unnerved", "On", "An explicit Unnerve source was found.", "High"); }
   if (skillNames.includes("inspiration")) { config.overrideInspirationCharges = Math.min(5, numberInputOr(build, 5, "overrideInspirationCharges")); add("inspiration", "Inspiration charges", `${config.overrideInspirationCharges}`, "Inspiration is present; five charges is used when the export omits the override.", "Medium"); }
   for (const [gemName, field] of Object.entries(curseFields)) if (skillNames.includes(gemName)) { config[field] = 1; add(`curse-${field}`, gemName, "On", "An enabled curse gem is present; only source-backed curses are re-enabled.", "High"); }
+  const disabled = new Set(disabledIds);
+  const disable = (id: string, fields: string[]) => { if (disabled.has(id)) for (const field of fields) delete config[field]; };
+  disable("power-charges", ["usePowerCharges"]);
+  disable("shock", ["conditionEnemyShocked", "conditionShockEffect"]);
+  disable("chill", ["conditionEnemyChilled", "conditionEnemyChilledEffect"]);
+  disable("totems", ["conditionHaveTotem", "conditionSummonedTotemRecently", "TotemsSummoned"]);
+  disable("sigil", ["sigilOfPowerStages"]);
+  disable("frost-shield", ["frostShieldStages"]);
+  disable("infusion", ["infusedChannellingInfusion"]);
+  disable("arcane-cloak", ["arcaneCloakUsedRecentlyCheck"]);
+  disable("focused", ["conditionFocused"]);
+  disable("exposure", ["conditionEnemyLightningExposure"]);
+  disable("unnerve", ["conditionEnemyUnnerved"]);
+  disable("inspiration", ["overrideInspirationCharges"]);
+  for (const field of Object.values(curseFields)) disable(`curse-${field}`, [field]);
+  // Keep disabled suggestions in the response so the UI can restore them in
+  // one click after comparing the recalculated state.
   return { config, hints };
-}
-
-function peakSkillPart(build: NormalizedBuild): number | undefined {
-  // Storm Burst of Repulsion has a documented second PoB part, "Max Duration
-  // Explode". It is a real skill part, not a DPS multiplier invented here.
-  // Baseline keeps the imported selection so the comparison remains honest.
-  return /storm burst of repulsion/i.test(build.mainSkill ?? "") ? 2 : undefined;
-}
-
-function peakSkillCount(build: NormalizedBuild): number | undefined {
-  // PoB represents the configured Storm Burst overlap as four instances in
-  // the supplied reference export. This is used only for peak/burst/mapping
-  // states; the imported baseline preserves the source export's count.
-  return /storm burst of repulsion/i.test(build.mainSkill ?? "") ? 4 : undefined;
 }
 
 function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], options: { includeLowLife?: boolean; includeKilled?: boolean; includeBoss?: boolean } = {}): ScenarioConfig {
@@ -155,15 +158,18 @@ function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], opt
   if (hasSource(conditions, "totem-present") && summonedTotems !== undefined) config.TotemsSummoned = summonedTotems;
   const inspirationCharges = numberInput(build, "overrideInspirationCharges");
   if (hasSource(conditions, "infused-channelling") && inspirationCharges !== undefined) config.overrideInspirationCharges = inspirationCharges;
-  const selectedPeakPart = peakSkillPart(build);
-  if (selectedPeakPart !== undefined) config.skillPartCalcs = selectedPeakPart;
-  const selectedPeakCount = peakSkillCount(build);
-  if (selectedPeakCount !== undefined) config.skillCount = selectedPeakCount;
+  const mainChannel = build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? build.damageChannels.find((channel) => channel.active);
+  const importedSkillPart = numberInput(build, "skillPartCalcs");
+  const importedSkillCount = numberInput(build, "skillCount");
+  const selectedSkillPart = mainChannel?.skillPart ?? importedSkillPart;
+  const selectedSkillCount = mainChannel?.skillCount ?? importedSkillCount;
+  if (selectedSkillPart !== undefined) config.skillPartCalcs = selectedSkillPart;
+  if (selectedSkillCount !== undefined) config.skillCount = selectedSkillCount;
   return config;
 }
 
-export function buildScenarioProfiles(build: NormalizedBuild, conditions: Condition[]): ScenarioProfile[] {
-  const automatic = recommendedConfiguration(build, conditions);
+export function buildScenarioProfiles(build: NormalizedBuild, conditions: Condition[], disabledAutomatic: string[] = []): ScenarioProfile[] {
+  const automatic = recommendedConfiguration(build, conditions, disabledAutomatic);
   const peak = sourcedCombatState(build, conditions, { includeBoss: true, includeLowLife: true, includeKilled: true });
   const burst = sourcedCombatState(build, conditions, { includeBoss: true });
   const initial: ScenarioConfig = { resetAllConditions: true, enemyIsBoss: "Pinnacle", useFrenzyCharges: false, conditionEnemyLowLife: false, conditionKilledRecently: false, conditionUsingFlask: false, buffOnslaught: false, sigilOfPowerStages: 0, frostShieldStages: 0, arcaneCloakUsedRecentlyCheck: false };
@@ -186,8 +192,8 @@ export function buildScenarioProfiles(build: NormalizedBuild, conditions: Condit
   ];
 }
 
-export function buildAutomaticConfiguration(build: NormalizedBuild, conditions: Condition[]) {
-  return recommendedConfiguration(build, conditions);
+export function buildAutomaticConfiguration(build: NormalizedBuild, conditions: Condition[], disabledAutomatic: string[] = []) {
+  return recommendedConfiguration(build, conditions, disabledAutomatic);
 }
 
 export const scenarioProfiles: ScenarioProfile[] = [

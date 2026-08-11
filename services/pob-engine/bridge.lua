@@ -263,7 +263,7 @@ local function calculate(request)
     engine = { name = "Path of Building Community", version = tostring(build.xmlVersion or "unknown"), commit = os.getenv("POB_COMMIT") or "pinned" },
     calculated = true,
     scenario = request.scenario or {},
-    offence = { fullDPS = numberOrNil(output.FullDPS), totalDPS = numberOrNil(output.TotalDPS), totalDot = numberOrNil(output.TotalDot), averageDamage = numberOrNil(output.AverageDamage), speed = numberOrNil(output.Speed), attackSpeed = numberOrNil(output.AttackSpeed), castSpeed = numberOrNil(output.CastSpeed) },
+    offence = { fullDPS = numberOrNil(output.FullDPS), combinedDPS = numberOrNil(output.CombinedDPS), totalDPS = numberOrNil(output.TotalDPS), totalDot = numberOrNil(output.TotalDotDPS or output.TotalDot), averageDamage = numberOrNil(output.AverageDamage), speed = numberOrNil(output.Speed), attackSpeed = numberOrNil(output.AttackSpeed), castSpeed = numberOrNil(output.CastSpeed) },
     minion = hasMinionOutput and minion or nil,
     defence = {
       totalEHP = outputNumber(output, "TotalEHP"),

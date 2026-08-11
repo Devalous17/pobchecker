@@ -28,9 +28,27 @@ describe("combat scenarios", () => {
     expect(scenarioDps(result)).toEqual({ value: 14_800_000, source: "TotalDotDPS" });
     expect(buildScenarioReport({ configured: result, unconditional: result, peak: result }, 30).configured.value).toBe(14_800_000);
   });
+  it("prefers aggregate FullDPS over hit DPS when both are exported", () => {
+    const result = {
+      engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {},
+      offence: { fullDPS: 200, combinedDPS: 150, totalDPS: 100, totalDot: 50 }, defence: {}, diagnostics: [],
+    };
+    expect(scenarioDps(result)).toEqual({ value: 200, source: "FullDPS" });
+  });
+  it("multiplies a per-source hit channel by active totems when FullDPS is absent", () => {
+    const result = {
+      engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: { TotemsSummoned: 4 },
+      offence: { fullDPS: 0, totalDPS: 47_700_000, totalDot: 0 }, defence: {}, diagnostics: [],
+    };
+    expect(scenarioDps(result)).toEqual({ value: 190_800_000, source: "TotalDPS × 4 active totems/ballistas" });
+  });
   it("chooses the highest boss-valid state instead of the imported configured state", () => {
     const result = (dps: number) => ({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {}, offence: { totalDPS: dps }, defence: {}, diagnostics: [] });
-    expect(scenarioDps(highestValidResult({ peak: result(5), burst: result(6), initial: result(4), sustained: result(3) })!).value).toBe(6);
+    expect(scenarioDps(highestValidResult({ peak: result(5), burst: result(6), initial: result(4) })!).value).toBe(6);
+  });
+  it("does not treat sustained output as the peak state", () => {
+    const result = (dps: number) => ({ engine: { name: "test", version: "1", commit: "x" }, calculated: true, scenario: {}, offence: { totalDPS: dps }, defence: {}, diagnostics: [] });
+    expect(highestValidResult({ peak: result(5), burst: result(6), initial: result(4) }) && scenarioDps(highestValidResult({ peak: result(5), burst: result(6), initial: result(4) })!).value).toBe(6);
   });
   it("builds distinct evidence-based profiles without inventing unsupported Frenzy Charges", () => {
     const build = parsePobXml(examplePobFixture);
@@ -42,12 +60,19 @@ describe("combat scenarios", () => {
     expect(byId.initial.config.conditionEnemyLowLife).toBe(false);
     expect(byId.peak.config.useFrenzyCharges).toBe(false);
     expect(byId.peak.config.conditionEnemyLowLife).toBe(true);
-    expect(byId.peak.config.skillPartCalcs).toBe(2);
-    expect(byId.peak.config.skillCount).toBe(4);
+    expect(byId.peak.config.skillPartCalcs).toBeUndefined();
+    expect(byId.peak.config.skillCount).toBeUndefined();
     expect(byId.mapping.config.enemyIsBoss).toBe("None");
     expect(byId.unconditional.config.resetAllConditions).toBe(true);
     expect(byId.unconditional.config.enemyIsBoss).toBe("None");
     expect(byId.sustained.config.enemyIsBoss).toBe("Pinnacle");
     expect(byId.sustained.config.resetAllConditions).toBe(true);
+  });
+  it("carries imported skill mode and count into alternate scenarios", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><mainSocketGroup>1</mainSocketGroup></Build><Skills><SkillSet id="1"><Skill mainActiveSkill="1"><Gem nameSpec="Example Skill" name="Example Skill"/></Skill></SkillSet></Skills><Config><Input name="skillPartCalcs" number="2"/><Input name="skillCount" number="4"/></Config></PathOfBuilding>`);
+    const profiles = buildScenarioProfiles(build, detectConditions(build));
+    const peak = profiles.find((profile) => profile.id === "peak");
+    expect(peak?.config.skillPartCalcs).toBe(2);
+    expect(peak?.config.skillCount).toBe(4);
   });
 });

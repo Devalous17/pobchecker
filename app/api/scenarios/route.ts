@@ -8,12 +8,12 @@ import { parsePobXml } from "@/src/features/pob/parse";
 import { detectConditions } from "@/src/features/conditions/registry";
 export async function POST(request: Request) {
   try {
-    const body = await request.json(); const { encounterSeconds: rawEncounterSeconds, ...engineBody } = body ?? {}; const parsed = engineRequestSchema.parse(engineBody); const encounterSeconds = Math.min(Math.max(Number(rawEncounterSeconds ?? 30), 1), 300);
+    const body = await request.json(); const { encounterSeconds: rawEncounterSeconds, disabledAutomatic = [], ...engineBody } = body ?? {}; const parsed = engineRequestSchema.parse(engineBody); const disabledIds = Array.isArray(disabledAutomatic) ? disabledAutomatic.filter((value): value is string => typeof value === "string") : []; const encounterSeconds = Math.min(Math.max(Number(rawEncounterSeconds ?? 30), 1), 300);
     const build = parsePobXml(parsed.xml);
     const conditions = detectConditions(build);
-    const profiles = buildScenarioProfiles(build, conditions);
+    const profiles = buildScenarioProfiles(build, conditions, disabledIds);
     const results: Record<string, Awaited<ReturnType<typeof calculateWithEngine>>> = {};
-    for (const profile of profiles) results[profile.id] = await calculateWithEngine({ xml: parsed.xml, scenario: { ...parsed.scenario, ...profile.config } });
+    for (const profile of profiles) results[profile.id] = await calculateWithEngine({ xml: parsed.xml, scenario: { ...profile.config, ...parsed.scenario } });
     const timeline: TimelineState[] = [];
     const initialSeconds = Math.min(3, encounterSeconds);
     const burstSeconds = Math.min(5, Math.max(encounterSeconds - initialSeconds, 0));
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     };
     const curseContributions = await compareDisabledGems(curseNames);
     const supportContributions = await compareDisabledGems(supportNames);
-    const automatic = buildAutomaticConfiguration(build, conditions);
+    const automatic = buildAutomaticConfiguration(build, conditions, disabledIds);
     const report = buildScenarioReport({ configured: results.configured, unconditional: results.unconditional, recommended: results.recommended, peak: highestValidResult(results) ?? results.peak, burst: results.burst, initial: results.initial, mapping: results.mapping }, encounterSeconds, timeline, automatic.hints);
     report.curseContributions = curseContributions;
     report.supportContributions = supportContributions;

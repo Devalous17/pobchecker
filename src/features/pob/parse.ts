@@ -9,6 +9,7 @@ import type {
   SourceAsset,
   SourceEntry,
 } from "@/src/types/domain";
+import { discoverDamageChannels } from "./channels";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", allowBooleanAttributes: true });
 const list = (value: unknown) => Array.isArray(value) ? value : value ? [value] : [];
@@ -122,6 +123,7 @@ export function parsePobXml(xml: string): NormalizedBuild {
   const build = root.Build ?? {};
   const config = root.Config ?? {};
   const skillSetups = parseSkillSetups(root);
+  const damageChannels = discoverDamageChannels(skillSetups);
   const skillRows = skillSetups.flatMap((setup) => setup.gems);
   const skills = skillRows.map((entry) => entry.name);
   const equippedItems = parseEquippedItems(root);
@@ -212,5 +214,5 @@ export function parsePobXml(xml: string): NormalizedBuild {
     energyShieldOnKill: stat("EnergyShieldOnKill"),
   };
   const identityName = String(build?.["@_name"] ?? "").trim() || mainSkill || "Unnamed build";
-  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
+  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, damageChannels, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
 }

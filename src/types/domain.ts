@@ -35,6 +35,8 @@ export interface SkillSetup {
   mainActiveSkill?: boolean;
   gems: SkillGemInfo[];
 }
+export type { DamageChannel, DamageChannelKind } from "@/src/features/pob/channels";
+export type { SkillCapabilityProfile } from "@/src/features/analysis/capabilities";
 export interface EquippedItemInfo {
   id?: string;
   slot: string;
@@ -96,7 +98,10 @@ export interface ImportedStats {
   energyShieldOnKill?: number;
 }
 export interface QualityRating { score: number | null; grade: QualityGrade | "?"; label: string; confidence: Confidence; basis: string[]; }
-export interface BuildQuality { overall: QualityRating; offence: QualityRating; defence: QualityRating; assumptions: string[]; limitations: string[]; }
+export interface RatingDpsEvidence { value: number | null; label: string; origin: "imported" | "worker-typical" | "worker-configured" | "unavailable"; explanation: string; importedValue?: number; differencePercent: number; verification: "not-run" | "matched" | "mismatch"; }
+export type OverviewRatingKey = "dps" | "clear" | "defence" | "bossing";
+export type OverviewRatings = Record<OverviewRatingKey, QualityRating>;
+export interface BuildQuality { overall: QualityRating; offence: QualityRating; defence: QualityRating; categoryRatings: OverviewRatings; capabilityProfile: import("@/src/features/analysis/capabilities").SkillCapabilityProfile; ratingDps: RatingDpsEvidence; assumptions: string[]; limitations: string[]; }
 export type LayerSide = "offence" | "defence";
 export type LayerSnapshotState = "baseline" | "typical" | "peak";
 export interface LayerSnapshot {
@@ -152,6 +157,7 @@ export interface NormalizedBuild {
   diagnostics: string[];
   sourceAssets: SourceAsset[];
   skillSetups: SkillSetup[];
+  damageChannels: import("@/src/features/pob/channels").DamageChannel[];
   equippedItems: EquippedItemInfo[];
   importedStats: ImportedStats;
   allocatedNodeIds: string[];

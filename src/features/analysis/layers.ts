@@ -10,6 +10,7 @@ import type {
   QualityRating,
 } from "@/src/types/domain";
 import type { ScenarioReport } from "@/src/features/scenarios/model";
+import { scenarioOffenceRating } from "./quality";
 
 const gradeFor = (score: number): QualityGrade => score >= 9 ? "S" : score >= 8 ? "A" : score >= 7 ? "B" : score >= 6 ? "C" : score >= 5 ? "D" : score >= 3 ? "E" : "F";
 const labelFor = (score: number) => score >= 9 ? "Exceptional" : score >= 8 ? "Very strong" : score >= 7 ? "Strong" : score >= 6 ? "Functional" : score >= 5 ? "Needs improvement" : score >= 3 ? "Fragile" : "Critical gaps";
@@ -79,7 +80,9 @@ function scenarioRecovery(defence: Record<string, number | null> | undefined): n
  * value remains the Typical snapshot; only Baseline and Peak are replaced here.
  * This keeps the report honest when the worker is unavailable or omits a field.
  */
-export function applyScenarioSnapshots(analysis: BuildLayerAnalysis, scenarios: ScenarioReport): BuildLayerAnalysis {
+export function applyScenarioSnapshots(analysis: BuildLayerAnalysis, scenarios: ScenarioReport, build?: Pick<NormalizedBuild, "mainSkill" | "skills">, conditions: Array<{ reliability: string }> = []): BuildLayerAnalysis {
+  const correctedDps = scenarios.recommended?.value ?? scenarios.peak.value ?? scenarios.configured.value;
+  const correctedOffence = correctedDps === null || correctedDps === undefined || !build ? analysis.offence.rating : scenarioOffenceRating(correctedDps, build, conditions);
   const updateFinding = (finding: BuildLayerFinding): BuildLayerFinding => {
     if (finding.id === "offence-main-link" && scenarios.supportContributions?.length) {
       const available = scenarios.supportContributions.some((comparison) => comparison.deltaDps !== null);
@@ -131,7 +134,7 @@ export function applyScenarioSnapshots(analysis: BuildLayerAnalysis, scenarios: 
   };
   return {
     ...analysis,
-    offence: { ...analysis.offence, findings: analysis.offence.findings.map(updateFinding) },
+    offence: { ...analysis.offence, rating: correctedOffence, findings: analysis.offence.findings.map((finding) => finding.id === "offence-damage-output" ? { ...updateFinding(finding), rating: correctedOffence } : updateFinding(finding)) },
     defence: { ...analysis.defence, findings: analysis.defence.findings.map(updateFinding) },
     assumptions: [...analysis.assumptions, "Baseline and peak snapshots are authoritative states returned by the pinned Headless PoB worker."],
   };

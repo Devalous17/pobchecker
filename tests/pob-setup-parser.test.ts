@@ -23,6 +23,11 @@ describe("PoB skill and equipment import", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill stat="4x Storm Burst of Repulsion" source="" /></Build><Skills><SkillSet id="1"><Skill slot="Weapon 2"><Gem nameSpec="Decoy Totem" name="Decoy Totem" /></Skill><Skill slot="Body Armour"><Gem nameSpec="Storm Burst of Repulsion" name="Storm Burst" /></Skill></SkillSet></Skills></PathOfBuilding>`);
     expect(build.mainSkill).toBe("Storm Burst of Repulsion");
   });
+  it("discovers generic damage channels without relying on a specific skill name", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Storm Burst"/></Build><Skills><SkillSet id="1"><Skill includeInFullDPS="true"><Gem nameSpec="Storm Burst" name="Storm Burst"/><Gem nameSpec="Storm Burst Totem" name="Storm Burst Totem"/><Gem nameSpec="Ignite" name="Ignite"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    expect(build.damageChannels.map((channel) => channel.kind)).toEqual(["unknown", "totem", "damage-over-time"]);
+    expect(build.damageChannels[1].includeInFullDPS).toBe(true);
+  });
 
   it("preserves linked gem setup metadata instead of flattening skills", () => {
     const build = parsePobXml(`<PathOfBuilding><Build level="90"/><Skills><SkillSet id="1"><Skill enabled="true" includeInFullDPS="true" slot="Body Armour"><Gem nameSpec="Arcane Cloak" name="Arcane Cloak" level="20" quality="23" colour="B"/><Gem nameSpec="Inspiration" name="Inspiration" level="20" quality="20" colour="G" isSupport="true"/></Skill></SkillSet></Skills></PathOfBuilding>`);
