@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # PoB Reality Check
 
 PoB Reality Check is a Path of Exile 1 build-analysis tool that explains how realistic configured Path of Building conditions are. It imports supported `pobb.in` links, decodes the export, reads PoB's own exported calculation snapshot, resolves allocated passive nodes from the official PoB tree data, and reports build identity plus uncertainty-aware condition findings.
@@ -37,3 +38,6 @@ it, you can preserve a human-confirmed label, for example:
 ```powershell
 node scripts/collect-pob-benchmarks.mjs .\data\benchmarks\incoming --delivery=mine
 ```
+=======
+# pobchecker
+>>>>>>> ba53bf4ae88ac5d1f58f5b0b253c9d9dacd12493
