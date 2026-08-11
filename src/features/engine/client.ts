@@ -15,7 +15,8 @@ export class EngineUnavailableError extends Error {
   }
 }
 
-const engineUrl = () => process.env.POB_ENGINE_URL?.trim().replace(/\/$/, "") || "";
+const hostedEngineUrl = "https://pob-engine.onrender.com";
+const engineUrl = () => process.env.POB_ENGINE_URL?.trim().replace(/\/$/, "") || (process.env.NODE_ENV === "production" ? hostedEngineUrl : "");
 
 export async function getEngineStatus(fetcher: typeof fetch = fetch): Promise<EngineStatus> {
   const url = engineUrl();
