@@ -44,7 +44,7 @@ export function importedRatingDps(build: { importedStats: RatingDpsStats }): Rat
   const selected = candidates.find(([, value]) => positive(value));
   return selected
     ? { value: selected[1] as number, label: selected[0], origin: "imported", explanation: "This exported aggregate value is the primary DPS source for the initial rating.", differencePercent: 0, verification: "not-run" }
-    : { value: null, label: "No aggregate PoB DPS", origin: "unavailable", explanation: "The export did not contain a positive aggregate damage value; run the worker to calculate one.", differencePercent: 0, verification: "not-run" };
+    : { value: null, label: "No aggregate PoB DPS", origin: "unavailable", explanation: "The export did not contain a positive aggregate damage value.", differencePercent: 0, verification: "not-run" };
 }
 
 export function scenarioOffenceRating(dps: number | null | undefined, build: CapabilityBuild, conditions: Array<{ reliability: string }>): QualityRating {

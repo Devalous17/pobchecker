@@ -295,15 +295,55 @@ function scenarioValue(result: ScenarioReport | null, key: keyof ScenarioReport)
   return isNumber(value) ? compactNumber(value) : "Unavailable";
 }
 
+function StaticQualityOverview({ report }: { report: Report }) {
+  const reviewCount = report.conditions.filter((condition) => !condition.sourceDetected || condition.reliability !== "Reliable").length;
+  const evidenceCount = report.conditions.filter((condition) => condition.sourceDetected).length;
+  return <FigmaPanel title="Build quality overview" eyebrow="Honest imported snapshot" className="figma-quality-panel">
+    <div className="figma-quality-grid">
+      <div className="figma-quality-copy">
+        <span className="figma-verdict-kicker">THE REALITY CHECK</span>
+        <h1>How good is this build?</h1>
+        <p>This rating uses the damage, defence, and conditions actually present in the imported Path of Building snapshot. It does not invent alternate combat scenarios.</p>
+        <ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+      </div>
+      <FigmaScore label="Overall build" rating={report.quality.overall} />
+      <div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" /></div>
+    </div>
+    <FigmaOverviewRatingGrid ratings={report.quality.categoryRatings} />
+    <div className="figma-reality-proof"><div><span>RATING DPS</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label}</small></div><div><span>CONDITIONS WITH EVIDENCE</span><strong>{evidenceCount}</strong><small>Source-backed effects found in the build</small></div><div><span>NEEDS REVIEW</span><strong>{reviewCount}</strong><small>Temporary, situational, or unverified dependencies</small></div></div>
+  </FigmaPanel>;
+}
+
+function StaticOverviewTab({ report }: { report: Report }) {
+  const stats = report.build.importedStats;
+  const defenceRows = statRows(stats, [{ key: "physicalMaximumHit", label: "Physical maximum hit", tone: "physical" }, { key: "fireMaximumHit", label: "Fire maximum hit", tone: "fire" }, { key: "coldMaximumHit", label: "Cold maximum hit", tone: "cold" }, { key: "lightningMaximumHit", label: "Lightning maximum hit", tone: "lightning" }, { key: "chaosMaximumHit", label: "Chaos maximum hit", tone: "chaos" }]).map((row) => ({ label: row.label, value: row.value, tone: row.tone }));
+  return <><StaticQualityOverview report={report} /><div className="figma-two-column"><FigmaPanel title="Offence summary" eyebrow="Imported damage output" className="figma-summary-panel"><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Imported" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Imported" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported" /></div></FigmaPanel><FigmaPanel title="Defence summary" eyebrow="Imported survivability" className="figma-summary-panel"><div className="figma-stat-grid"><FigmaStatTile label="Life" value={stats.life ? compactNumber(stats.life) : "Not exported"} tone="life" icon="♥" source="Imported" /><FigmaStatTile label="Effective hit pool" value={stats.effectiveHealthPool ? compactNumber(stats.effectiveHealthPool) : "Not exported"} tone="ehp" icon="◉" source="Imported" /><FigmaStatTile label="Energy shield" value={stats.energyShield ? compactNumber(stats.energyShield) : "Not exported"} tone="energy" icon="●" source="Imported" /><FigmaStatTile label="Mana" value={stats.mana ? compactNumber(stats.mana) : "Not exported"} tone="mana" icon="◌" source="Imported" /></div><h3 className="figma-subheading">Maximum hit</h3><FigmaRows rows={defenceRows} /></FigmaPanel></div><FigmaPanel title="Imported Path of Building snapshot" eyebrow="Exact source data" className="figma-snapshot-panel"><div className="figma-snapshot-head"><div><h1>{report.mainSkill ?? report.build.identity.name}</h1><p>{[report.build.identity.ascendancy ?? report.build.identity.className, report.build.identity.level && `Level ${report.build.identity.level}`, report.build.identity.version].filter(Boolean).join("  ·  ")}</p></div><div className="figma-inline-badges"><span>EXACT IMPORTS</span><span>{report.audit.conditional} CONDITIONAL EFFECTS</span>{report.audit.unverified > 0 && <span>{report.audit.unverified} UNVERIFIED</span>}</div></div></FigmaPanel><FigmaPanel title="Build loadout" eyebrow="Imported equipment and socket groups" className="figma-loadout-panel"><BuildLoadoutPanel skillSetups={report.build.skillSetups} equippedItems={report.build.equippedItems} summary={report.sourceSummary} /></FigmaPanel></>;
+}
+
+function StaticOffenceTab({ report }: { report: Report }) {
+  const stats = report.build.importedStats;
+  const mainChannel = report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
+  return <><FigmaPanel title="Offence" eyebrow="Imported damage output" className="figma-page-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">IMPORTED SETUP</span></div><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /></div><h3 className="figma-subheading">Imported damage conditions</h3><ConditionTable title="" items={report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both")} /></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel></>;
+}
+
+function StaticDefenceTab({ report }: { report: Report }) {
+  const stats = report.build.importedStats;
+  return <><DefenceGoals /><FigmaPanel title="Defence" eyebrow="Imported survivability" className="figma-page-panel"><div className="figma-defence-grid"><DefenceInspector stats={stats} /><div className="figma-defence-notice"><strong>Imported defence evidence</strong><p>These values come directly from the selected PoB snapshot. Temporary skills, flasks, charges, and conditional effects are shown as review items rather than recalculated.</p>{report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both").slice(0, 8).map((condition) => <div className="figma-condition-row" key={condition.id}><span>{condition.displayName}</span><b>{condition.reliability} · {condition.confidence}</b></div>)}</div></div></FigmaPanel></>;
+}
+
+function StaticConditionsTab({ report }: { report: Report }) {
+  return <><FigmaPanel title="Imported conditions" eyebrow="What the build export actually shows" className="figma-page-panel"><p className="figma-explainer">Conditions are listed as evidence for the rating. They are not toggled or recalculated in the public report.</p><ConditionTable title="Offence conditions" items={report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both")} /><ConditionTable title="Defence conditions" items={report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both")} /></FigmaPanel><FigmaPanel title="Recommendations" eyebrow="Practical next checks" className="figma-page-panel"><div className="figma-condition-grid">{report.recommendations.map((recommendation) => <div className="figma-condition-card" key={recommendation.conditionId}><strong>{recommendation.title}</strong><p>{recommendation.detail}</p></div>)}</div></FigmaPanel></>;
+}
+
 function FigmaReportView({ report: inputReport, onReset, scenarioResult, onScenarioResult, activeTab, setActiveTab }: { report: Report; onReset: () => void; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
   const correctedQuality = scenarioResult ? recalculateBuildQuality(inputReport.quality, inputReport.build, inputReport.conditions.map((condition) => ({ reliability: condition.reliability })), scenarioResult) : inputReport.quality;
   const report = scenarioResult ? { ...inputReport, quality: correctedQuality } : inputReport;
   const tabProps = { report, scenarioResult, onScenarioResult };
   return <main id="report" className="figma-workbench">
-    {activeTab === "overview" && <FigmaOverviewTab {...tabProps} />}
-    {activeTab === "offence" && <FigmaOffenceTab {...tabProps} />}
-    {activeTab === "defence" && <><DefenceGoals /><FigmaDefenceTab {...tabProps} /></>}
-    {activeTab === "conditions" && <FigmaConditionsTabV2 {...tabProps} />}
+    {activeTab === "overview" && <StaticOverviewTab report={report} />}
+    {activeTab === "offence" && <StaticOffenceTab report={report} />}
+    {activeTab === "defence" && <StaticDefenceTab report={report} />}
+    {activeTab === "conditions" && <StaticConditionsTab report={report} />}
     {activeTab === "comparison" && <FigmaComparisonTab report={report} />}
     <button type="button" className="figma-reset-link" onClick={onReset}>Analyse another build</button>
     <span className="sr-only" aria-live="polite">Current report tab: {reportTabs.find((tab) => tab.id === activeTab)?.label}</span>
