@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./capability-profile.css";
+@import "./credits-and-polish.css";
 .honesty-score{min-width:120px;border:1px solid #806229;background:#211d16;padding:10px 14px;display:flex;flex-direction:column;gap:3px}.honesty-score span{color:var(--gold);font-size:10px;letter-spacing:.14em}.honesty-score strong{font-size:30px;color:var(--text)}.honesty-score strong small{font-size:14px;color:var(--muted)}.honesty-score em{font-style:normal;color:var(--green);font-size:11px}.tree-summary{display:flex;gap:26px;flex-wrap:wrap;margin:16px 0}.tree-summary div{display:flex;flex-direction:column;gap:4px}.tree-summary strong{color:var(--gold);font-size:20px}.tree-summary span{color:var(--muted);font-size:11px}.notable-list{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.notable-list div{display:grid;grid-template-columns:12px 1fr;column-gap:8px;background:#101416;border:1px solid #252b2d;padding:10px}.notable-list strong{font-size:12px}.notable-list small{grid-column:2;color:var(--muted);font-size:11px;margin-top:4px}.node-dot{width:10px;height:10px;border-radius:50%;background:var(--gold);margin-top:3px}.node-dot.ascendancy{background:var(--orange)}.node-dot.keystone{background:var(--blue)}
 
 /* PoE utility workbench skin */
