@@ -1,0 +1,61 @@
+/* High-contrast report typography: labels should be readable at a glance. */
+.figma-workbench,
+.rating-reveal-card {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.figma-panel-heading h2,
+.figma-subheading,
+.figma-quality-copy h1,
+.figma-snapshot-head h1,
+.figma-active-skill strong {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.figma-panel-heading h2 { font-size: 20px; color: #ffe09a; letter-spacing: .14em; }
+.figma-panel-heading p { font-size: 11px; color: #b7d5d5; }
+.figma-quality-copy h1 { font-size: 36px; color: #fff7e8; }
+.figma-quality-copy p { font-size: 16px; color: #edf4f0; }
+.figma-quality-copy li { font-size: 14px; color: #e1d7b6; }
+
+.figma-stat-tile small,
+.figma-capability-rail span,
+.figma-reality-proof span,
+.figma-reality-gap span,
+.figma-overview-rating span {
+  font-size: 12px !important;
+  font-weight: 800;
+  color: #e4efeb !important;
+  letter-spacing: .08em;
+}
+
+.figma-stat-tile strong { font-size: 27px; }
+.figma-stat-tile em,
+.figma-capability-rail small,
+.figma-reality-proof small,
+.figma-overview-rating small,
+.figma-overview-rating em { font-size: 12px; color: #c9d6d2; }
+.figma-capability-rail>div { min-height: 72px; }
+.figma-capability-rail strong { font-size: 15px; color: #ffd777; }
+.figma-row { font-size: 15px; }
+.figma-row strong { font-size: 16px; }
+.figma-condition-row { font-size: 15px; }
+.figma-condition-row b { font-size: 11px; }
+.figma-explainer,
+.figma-proof-list,
+.figma-tip-list,
+.figma-target-metric small,
+.figma-target-metric p,
+.figma-target-metric em { font-size: 14px !important; }
+.figma-target-metric strong { font-size: 15px; }
+.figma-offence-feature strong { font-size: 15px; }
+.figma-offence-feature p { font-size: 14px; }
+.figma-key-stat-grid .figma-stat-tile small { font-size: 13px !important; }
+
+@media (max-width: 700px) {
+  .figma-panel-heading h2 { font-size: 16px; }
+  .figma-quality-copy h1 { font-size: 30px; }
+  .figma-quality-copy p { font-size: 14px; }
+  .figma-stat-tile small { font-size: 11px !important; }
+  .figma-stat-tile strong { font-size: 23px; }
+}
