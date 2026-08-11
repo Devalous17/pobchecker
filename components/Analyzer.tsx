@@ -306,8 +306,8 @@ function StaticQualityOverview({ report }: { report: Report }) {
         <p>This rating uses the damage, defence, and conditions actually present in the imported Path of Building snapshot. It does not invent alternate combat scenarios.</p>
         <ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
       </div>
-      <FigmaScore label="Overall build" rating={report.quality.overall} />
-      <div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" /></div>
+      <FigmaScore label="Overall build" rating={report.quality.overall} icon="◉" />
+      <div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} icon="⚔" /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" icon="◈" /></div>
     </div>
     <FigmaOverviewRatingGrid ratings={report.quality.categoryRatings} />
     <div className="figma-reality-proof"><div><span>RATING DPS</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label}</small></div><div><span>CONDITIONS WITH EVIDENCE</span><strong>{evidenceCount}</strong><small>Source-backed effects found in the build</small></div><div><span>NEEDS REVIEW</span><strong>{reviewCount}</strong><small>Temporary, situational, or unverified dependencies</small></div></div>
