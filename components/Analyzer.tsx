@@ -135,7 +135,7 @@ export function Analyzer() {
     <p className="privacy">Only supported pobb.in links are fetched. Direct PoB codes do not contact PoE accounts. Results are analysis estimates, not gameplay guarantees.</p>
   </section>;
 
-  return <><FigmaChrome report={report} source={source} setSource={setSource} loading={loading} onAnalyze={() => void analyze()} activeTab={activeTab} setActiveTab={setActiveTab} />{report && showRatingReveal && <FigmaRatingReveal report={report} exiting={ratingRevealExiting} onDismiss={() => { setRatingRevealExiting(true); window.setTimeout(() => setShowRatingReveal(false), 300); }} />}{content}</>;
+  return <><FigmaChrome report={report} source={source} setSource={setSource} loading={loading} onAnalyze={() => void analyze()} onReset={() => { setReport(null); setShowRatingReveal(false); setActiveTab("overview"); window.history.replaceState({}, "", "/"); }} activeTab={activeTab} setActiveTab={setActiveTab} />{report && showRatingReveal && <FigmaRatingReveal report={report} exiting={ratingRevealExiting} onDismiss={() => { setRatingRevealExiting(true); window.setTimeout(() => setShowRatingReveal(false), 300); }} />}{content}</>;
 }
 void TabbedAnalyzer;
 
@@ -239,12 +239,12 @@ function FigmaConditionsTabV2({ report, scenarioResult, onScenarioResult }: { re
   return <><FigmaPanel title="Configuration & conditions" eyebrow="Choose what the worker should include" className="figma-page-panel config-page-panel"><p className="figma-explainer">Turn source-backed offence and defence conditions on or off, then recalculate. Imported PoB snapshot values stay unchanged; the calculated combat states below show the effect of your selected setup. Curses are included as direct toggles.</p><div className="config-toolbar"><div><strong>{detected.filter((condition) => condition.sourceDetected && !disabledConditions.includes(condition.id)).length} conditions enabled</strong><small>{pendingChanges ? "Changes waiting to be recalculated" : scenarioResult ? "Showing the last worker result" : "No worker result yet"}</small></div><button type="button" className="button" onClick={calculate}>{pendingChanges ? "Recalculate changes" : "Calculate selected setup"}</button></div><ConfigConditionList title="Offence · damage" items={offence} disabledIds={disabledConditions} onToggle={toggle} /><ConfigConditionList title="Defence · survivability" items={defence} disabledIds={disabledConditions} onToggle={toggle} /></FigmaPanel><FigmaPanel title="Calculated result" eyebrow="Your selected conditions" className="figma-page-panel"><ScenarioPanelV2 xml={report.build.rawXml} stats={report.build.importedStats} channels={report.build.damageChannels} onResult={onScenarioResult} runRequest={runRequest} disabledAutomatic={disabledConditions} onDisabledAutomaticChange={(ids) => { setDisabledConditions(ids); setPendingChanges(false); }} /><div className="figma-timeline-list">{scenarioResult?.timeline?.map((state) => <div key={state.id}><strong>{state.label}</strong><span>{state.durationSeconds.toFixed(1)}s</span><b>{state.dps === null ? "Unavailable" : compactNumber(state.dps)}</b><p>{state.assumptions.join(" · ") || "Engine-calculated state"}</p></div>)}</div></FigmaPanel></>;
 }
 
-function FigmaChrome({ report, source, setSource, loading, onAnalyze, activeTab, setActiveTab }: { report: Report | null; source: string; setSource: (value: string) => void; loading: boolean; onAnalyze: () => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
+function FigmaChrome({ report, source, setSource, loading, onAnalyze, onReset, activeTab, setActiveTab }: { report: Report | null; source: string; setSource: (value: string) => void; loading: boolean; onAnalyze: () => void; onReset: () => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
   const identity = report?.build.identity;
   return <>
     <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a></nav></div>
     <header className="mainbar figma-mainbar">
-      <a className="brand-lockup" href="#analyze" aria-label="PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></a>
+      <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
         {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
       </nav>
@@ -302,7 +302,7 @@ function FigmaReportView({ report: inputReport, onReset, scenarioResult, onScena
   return <main id="report" className="figma-workbench">
     {activeTab === "overview" && <FigmaOverviewTab {...tabProps} />}
     {activeTab === "offence" && <FigmaOffenceTab {...tabProps} />}
-    {activeTab === "defence" && <FigmaDefenceTab {...tabProps} />}
+    {activeTab === "defence" && <><DefenceGoals /><FigmaDefenceTab {...tabProps} /></>}
     {activeTab === "conditions" && <FigmaConditionsTabV2 {...tabProps} />}
     {activeTab === "comparison" && <FigmaComparisonTab report={report} />}
     <button type="button" className="figma-reset-link" onClick={onReset}>Analyse another build</button>
@@ -409,6 +409,10 @@ function FigmaOffenceTab({ report, scenarioResult, onScenarioResult }: { report:
   const offenceConditions = report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both");
   const conditionColumns = [offenceConditions.filter((_, index) => index % 2 === 0), offenceConditions.filter((_, index) => index % 2 === 1)];
   return <><FigmaPanel title="Offence" eyebrow="Damage output" className="figma-page-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">{mainChannel ? "IMPORTED SETUP" : "UNAVAILABLE"}</span></div><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /><h3 className="figma-subheading">Damage conditions</h3><div className="figma-offence-condition-columns">{conditionColumns.map((items, index) => <ConditionTable key={index} title="" items={items} />)}</div></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel><FigmaPanel title="Damage channels" eyebrow="Supported active skills" className="figma-page-panel"><DamageChannelPanel xml={report.build.rawXml} channels={report.build.damageChannels} /></FigmaPanel><FigmaPanel title="Scenario lab" eyebrow="Recalculate a selected state" className="figma-page-panel"><ScenarioPanelV2 xml={report.build.rawXml} stats={stats} channels={report.build.damageChannels} onResult={onScenarioResult} /></FigmaPanel><span className="sr-only">Scenario result loaded: {scenarioResult ? "yes" : "not yet"}</span></>;
+}
+
+function DefenceGoals() {
+  return <section className="figma-defence-goals" aria-label="Defence goals"><div><span>DEFENCE GOALS</span><strong>What to improve or attain</strong></div><div className="figma-defence-goal-grid"><div><b>Maximum hit</b><span>Higher is better</span><small>Build the largest possible hit pool against each damage type.</small></div><div><b>Elemental resistance</b><span>75% cap</span><small>Fire, cold, and lightning resistance should reach at least 75%.</small></div></div></section>;
 }
 
 function FigmaDefenceTab({ report, scenarioResult }: { report: Report; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void }) {
