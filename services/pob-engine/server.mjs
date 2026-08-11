@@ -5,6 +5,7 @@ const port = Number(process.env.PORT || 8080);
 const lua = process.env.POB_LUAJIT || "luajit";
 const bridge = process.env.POB_BRIDGE || new URL("./bridge.lua", import.meta.url).pathname;
 const sourceDirectory = process.env.POB_SRC || process.cwd();
+const calculationTimeoutMs = Number(process.env.POB_CALCULATION_TIMEOUT_MS || 60_000);
 
 function checkRuntime() {
   return new Promise((resolve) => {
@@ -22,12 +23,15 @@ function checkRuntime() {
 
 function run(request) {
   return new Promise((resolve, reject) => {
-    const child = spawn(lua, [bridge], { cwd: sourceDirectory, stdio: ["pipe", "pipe", "pipe"], timeout: 12000 });
+    const child = spawn(lua, [bridge], { cwd: sourceDirectory, stdio: ["pipe", "pipe", "pipe"], timeout: calculationTimeoutMs });
     let stdout = ""; let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; }); child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) return reject(new Error(stderr.trim() || `Lua engine exited with ${code}`));
+    child.on("close", (code, signal) => {
+      if (code !== 0) {
+        if (code === null) return reject(new Error(`Lua engine was terminated${signal ? ` by ${signal}` : ""}; calculation exceeded the ${Math.round(calculationTimeoutMs / 1000)} second worker limit or the service ran out of resources.`));
+        return reject(new Error(stderr.trim() || `Lua engine exited with ${code}`));
+      }
       const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
       for (let index = lines.length - 1; index >= 0; index -= 1) {
         try {

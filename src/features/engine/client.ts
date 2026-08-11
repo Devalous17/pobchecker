@@ -40,7 +40,7 @@ export async function calculateWithEngine(input: EngineRequest, fetcher: typeof 
 
   let response: Response;
   try {
-    response = await fetcher(`${url}/calculate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request), signal: AbortSignal.timeout(15_000) });
+    response = await fetcher(`${url}/calculate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request), signal: AbortSignal.timeout(65_000) });
   } catch {
     throw new EngineUnavailableError("The PoB worker endpoint is configured, but it did not respond to the calculation request.", "unreachable");
   }
