@@ -23,7 +23,7 @@ test("server renders the PoB analyzer shell", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>PoB Reality Check<\/title>/i);
-  assert.match(html, /Build quality &amp; reality analysis/);
+  assert.match(html, /A combat-quality report for your PoB build/);
   assert.match(html, /pobb\.in\/\.\.\.|Path of Building import code/);
   assert.match(html, /Analyze build/);
   assert.match(html, /Automatic format detection/);

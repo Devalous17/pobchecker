@@ -49,14 +49,14 @@ const numberInput = (build: NormalizedBuild, ...names: string[]) => {
 };
 const numberInputOr = (build: NormalizedBuild, fallback: number, ...names: string[]) => numberInput(build, ...names) ?? fallback;
 const hasConfig = (build: NormalizedBuild, name: string) => /^(true|1|yes)$/i.test(configured(build, name)?.value ?? "");
-const curseFields: Record<string, string> = {
+export const curseFields: Record<string, string> = {
   "elemental weakness": "playerCursedWithElementalWeakness", conductivity: "playerCursedWithConductivity", punishment: "playerCursedWithPunishment",
   vulnerability: "playerCursedWithVulnerability", flammability: "playerCursedWithFlammability", frostbite: "playerCursedWithFrostbite",
   "temporal chains": "playerCursedWithTemporalChains", despair: "playerCursedWithDespair", enfeeble: "playerCursedWithEnfeeble", "warlord's mark": "playerCursedWithWarlordsMark",
 };
 
 function recommendedConfiguration(build: NormalizedBuild, conditions: Condition[], disabledIds: string[] = []): { config: ScenarioConfig; hints: AutoConfigurationHint[] } {
-  const config = sourcedCombatState(build, conditions, { includeBoss: true });
+  const config = sourcedCombatState(build, conditions, { includeBoss: true, disabledIds });
   const hints: AutoConfigurationHint[] = [];
   const add = (id: string, label: string, value: string, reason: string, confidence: AutoConfigurationHint["confidence"]) => hints.push({ id, label, value, reason, confidence });
   const skillNames = enabledGemNames(build).join(" ").toLowerCase();
@@ -94,7 +94,7 @@ function recommendedConfiguration(build: NormalizedBuild, conditions: Condition[
   return { config, hints };
 }
 
-function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], options: { includeLowLife?: boolean; includeKilled?: boolean; includeBoss?: boolean } = {}): ScenarioConfig {
+function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], options: { includeLowLife?: boolean; includeKilled?: boolean; includeBoss?: boolean; disabledIds?: string[] } = {}): ScenarioConfig {
   // Alternate scenarios must reset known inputs first. Otherwise an unsupported
   // checkbox from the imported XML would silently leak into the calculation.
   const config: ScenarioConfig = {
@@ -124,40 +124,44 @@ function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], opt
     buffArcaneSurge: false,
     infusedChannellingInfusion: false,
   };
+  const disabled = new Set(options.disabledIds ?? []);
+  const enabled = (id: string) => !disabled.has(id);
   if (options.includeBoss !== undefined) config.enemyIsBoss = options.includeBoss ? "Pinnacle" : "None";
-  if (hasSource(conditions, "power-charges")) config.usePowerCharges = true;
-  if (hasSource(conditions, "frenzy-charges")) config.useFrenzyCharges = true;
-  if (hasSource(conditions, "endurance-charges")) config.useEnduranceCharges = true;
-  if (hasSource(conditions, "onslaught")) config.buffOnslaught = true;
-  if (hasSourceOrEvidence(build, conditions, "flasks")) config.conditionUsingFlask = true;
-  if (options.includeLowLife && hasSourceOrEvidence(build, conditions, "enemy-low-life")) config.conditionEnemyLowLife = true;
-  if (options.includeKilled && hasKnownCondition(conditions, "recently-killed")) config.conditionKilledRecently = true;
+  if (enabled("power-charges") && hasSource(conditions, "power-charges")) config.usePowerCharges = true;
+  if (enabled("frenzy-charges") && hasSource(conditions, "frenzy-charges")) config.useFrenzyCharges = true;
+  if (enabled("endurance-charges") && hasSource(conditions, "endurance-charges")) config.useEnduranceCharges = true;
+  if (enabled("onslaught") && hasSource(conditions, "onslaught")) config.buffOnslaught = true;
+  if (enabled("flasks") && hasSourceOrEvidence(build, conditions, "flasks")) config.conditionUsingFlask = true;
+  if (enabled("enemy-low-life") && options.includeLowLife && hasSourceOrEvidence(build, conditions, "enemy-low-life")) config.conditionEnemyLowLife = true;
+  if (enabled("recently-killed") && options.includeKilled && hasKnownCondition(conditions, "recently-killed")) config.conditionKilledRecently = true;
   const sigilStages = numberInput(build, "sigilOfPowerStages");
-  if (hasSourceOrEvidence(build, conditions, "sigil-of-power") && sigilStages !== undefined) config.sigilOfPowerStages = sigilStages;
+  if (enabled("sigil-of-power") && hasSourceOrEvidence(build, conditions, "sigil-of-power") && sigilStages !== undefined) config.sigilOfPowerStages = sigilStages;
   const frostStages = numberInput(build, "frostShieldStages");
-  if (hasSourceOrEvidence(build, conditions, "frost-shield") && frostStages !== undefined) config.frostShieldStages = frostStages;
-  if (hasSourceOrEvidence(build, conditions, "arcane-cloak")) config.arcaneCloakUsedRecentlyCheck = true;
-  if (hasSourceOrEvidence(build, conditions, "enemy-shocked")) config.conditionEnemyShocked = true;
-  if (hasSourceOrEvidence(build, conditions, "enemy-chilled")) config.conditionEnemyChilled = true;
-  if (hasSourceOrEvidence(build, conditions, "recently-summoned-totem")) config.conditionSummonedTotemRecently = true;
-  if (hasSourceOrEvidence(build, conditions, "totem-present")) config.conditionHaveTotem = true;
-  if (hasSource(conditions, "enemy-lightning-exposure")) config.conditionEnemyLightningExposure = true;
-  if (hasSource(conditions, "recently-hit-spell")) config.conditionHitSpellRecently = true;
-  if (hasSource(conditions, "enemy-unnerved")) config.conditionEnemyUnnerved = true;
-  if (hasSource(conditions, "totems-hit-spell-recently")) config.conditionTotemsHitSpellRecently = true;
-  if (hasSourceOrEvidence(build, conditions, "focused")) config.conditionFocused = true;
-  if (hasSource(conditions, "recently-attacked")) config.conditionAttackedRecently = true;
-  if (hasSource(conditions, "recently-cast-spell")) config.conditionCastSpellRecently = true;
-  if (hasSourceOrEvidence(build, conditions, "arcane-surge")) config.buffArcaneSurge = true;
-  if (hasSourceOrEvidence(build, conditions, "infused-channelling")) config.infusedChannellingInfusion = true;
+  if (enabled("frost-shield") && hasSourceOrEvidence(build, conditions, "frost-shield") && frostStages !== undefined) config.frostShieldStages = frostStages;
+  if (enabled("arcane-cloak") && hasSourceOrEvidence(build, conditions, "arcane-cloak")) config.arcaneCloakUsedRecentlyCheck = true;
+  if (enabled("enemy-shocked") && hasSourceOrEvidence(build, conditions, "enemy-shocked")) config.conditionEnemyShocked = true;
+  if (enabled("enemy-chilled") && hasSourceOrEvidence(build, conditions, "enemy-chilled")) config.conditionEnemyChilled = true;
+  if (enabled("recently-summoned-totem") && hasSourceOrEvidence(build, conditions, "recently-summoned-totem")) config.conditionSummonedTotemRecently = true;
+  if (enabled("totem-present") && hasSourceOrEvidence(build, conditions, "totem-present")) config.conditionHaveTotem = true;
+  if (enabled("enemy-lightning-exposure") && hasSource(conditions, "enemy-lightning-exposure")) config.conditionEnemyLightningExposure = true;
+  if (enabled("recently-hit-spell") && hasSource(conditions, "recently-hit-spell")) config.conditionHitSpellRecently = true;
+  if (enabled("enemy-unnerved") && hasSource(conditions, "enemy-unnerved")) config.conditionEnemyUnnerved = true;
+  if (enabled("totems-hit-spell-recently") && hasSource(conditions, "totems-hit-spell-recently")) config.conditionTotemsHitSpellRecently = true;
+  if (enabled("focused") && hasSourceOrEvidence(build, conditions, "focused")) config.conditionFocused = true;
+  if (enabled("recently-attacked") && hasSource(conditions, "recently-attacked")) config.conditionAttackedRecently = true;
+  if (enabled("recently-cast-spell") && hasSource(conditions, "recently-cast-spell")) config.conditionCastSpellRecently = true;
+  if (enabled("arcane-surge") && hasSourceOrEvidence(build, conditions, "arcane-surge")) config.buffArcaneSurge = true;
+  if (enabled("infused-channelling") && hasSourceOrEvidence(build, conditions, "infused-channelling")) config.infusedChannellingInfusion = true;
   const chilledEffect = numberInput(build, "conditionEnemyChilledEffect");
-  if (hasSource(conditions, "enemy-chilled") && chilledEffect !== undefined) config.conditionEnemyChilledEffect = chilledEffect;
+  if (enabled("enemy-chilled") && hasSource(conditions, "enemy-chilled") && chilledEffect !== undefined) config.conditionEnemyChilledEffect = chilledEffect;
   const shockEffect = numberInput(build, "conditionShockEffect");
-  if (hasSource(conditions, "enemy-shocked") && shockEffect !== undefined) config.conditionShockEffect = shockEffect;
+  if (enabled("enemy-shocked") && hasSource(conditions, "enemy-shocked") && shockEffect !== undefined) config.conditionShockEffect = shockEffect;
   const summonedTotems = numberInput(build, "TotemsSummoned");
-  if (hasSource(conditions, "totem-present") && summonedTotems !== undefined) config.TotemsSummoned = summonedTotems;
+  if (enabled("totem-present") && hasSource(conditions, "totem-present") && summonedTotems !== undefined) config.TotemsSummoned = summonedTotems;
   const inspirationCharges = numberInput(build, "overrideInspirationCharges");
-  if (hasSource(conditions, "infused-channelling") && inspirationCharges !== undefined) config.overrideInspirationCharges = inspirationCharges;
+  if (enabled("infused-channelling") && hasSource(conditions, "infused-channelling") && inspirationCharges !== undefined) config.overrideInspirationCharges = inspirationCharges;
+  const skillNames = enabledGemNames(build).join(" ").toLowerCase();
+  for (const [gemName, field] of Object.entries(curseFields)) if (enabled(`curse-${field}`) && skillNames.includes(gemName)) config[field] = 1;
   const mainChannel = build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? build.damageChannels.find((channel) => channel.active);
   const importedSkillPart = numberInput(build, "skillPartCalcs");
   const importedSkillCount = numberInput(build, "skillCount");
@@ -170,16 +174,15 @@ function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], opt
 
 export function buildScenarioProfiles(build: NormalizedBuild, conditions: Condition[], disabledAutomatic: string[] = []): ScenarioProfile[] {
   const automatic = recommendedConfiguration(build, conditions, disabledAutomatic);
-  const peak = sourcedCombatState(build, conditions, { includeBoss: true, includeLowLife: true, includeKilled: true });
-  const burst = sourcedCombatState(build, conditions, { includeBoss: true });
+  const disabledIds = disabledAutomatic;
+  const peak = sourcedCombatState(build, conditions, { includeBoss: true, includeLowLife: true, includeKilled: true, disabledIds });
+  const burst = sourcedCombatState(build, conditions, { includeBoss: true, disabledIds });
   const initial: ScenarioConfig = { resetAllConditions: true, enemyIsBoss: "Pinnacle", useFrenzyCharges: false, conditionEnemyLowLife: false, conditionKilledRecently: false, conditionUsingFlask: false, buffOnslaught: false, sigilOfPowerStages: 0, frostShieldStages: 0, arcaneCloakUsedRecentlyCheck: false };
   // Conviction of Power and other reliable minimum-charge sources remain in the opening state.
-  if (hasSource(conditions, "power-charges") && conditions.find((entry) => entry.id === "power-charges")?.reliability === "Reliable") initial.usePowerCharges = true;
+  if (!disabledIds.includes("power-charges") && hasSource(conditions, "power-charges") && conditions.find((entry) => entry.id === "power-charges")?.reliability === "Reliable") initial.usePowerCharges = true;
   else initial.usePowerCharges = false;
-  if (hasSource(conditions, "endurance-charges") && conditions.find((entry) => entry.id === "endurance-charges")?.reliability === "Reliable") initial.useEnduranceCharges = true;
+  if (!disabledIds.includes("endurance-charges") && hasSource(conditions, "endurance-charges") && conditions.find((entry) => entry.id === "endurance-charges")?.reliability === "Reliable") initial.useEnduranceCharges = true;
   else initial.useEnduranceCharges = false;
-  const mapping = sourcedCombatState(build, conditions, { includeBoss: false, includeKilled: true });
-  mapping.conditionEnemyLowLife = false;
   return [
     { id: "configured", label: "Configured PoB", purpose: "The exact configuration supplied by the imported build.", config: {} },
     { id: "unconditional", label: "Unconditional DPS", purpose: "Baseline engine calculation with supported combat conditions and custom condition modifiers disabled.", config: { resetAllConditions: true, enemyIsBoss: "None" } },
@@ -187,8 +190,8 @@ export function buildScenarioProfiles(build: NormalizedBuild, conditions: Condit
     { id: "peak", label: "Peak DPS", purpose: "Highest engine-calculated value for compatible conditions with detected sources.", config: peak },
     { id: "burst", label: "Realistic burst DPS", purpose: "A practical boss window excluding mapping-only and low-life phase conditions.", config: burst, durationSeconds: 5 },
     { id: "initial", label: "Initial boss DPS", purpose: "Opening state: reliable baseline sources remain, while ramp and temporary states are inactive.", config: initial, durationSeconds: 3 },
-    { id: "sustained", label: "Sustained boss DPS", purpose: "Timeline-weighted encounter average using the source-backed boss state rather than the imported configured state.", config: sourcedCombatState(build, conditions, { includeBoss: true }), durationSeconds: 30 },
-    { id: "mapping", label: "Mapping DPS", purpose: "Clearing state where sourced flask and recently-killed effects may apply.", config: mapping, durationSeconds: 10 },
+    { id: "sustained", label: "Sustained boss DPS", purpose: "Timeline-weighted encounter average using the source-backed boss state rather than the imported configured state.", config: sourcedCombatState(build, conditions, { includeBoss: true, disabledIds }), durationSeconds: 30 },
+    { id: "mapping", label: "Mapping DPS", purpose: "Clearing state where sourced flask and recently-killed effects may apply.", config: sourcedCombatState(build, conditions, { includeBoss: false, includeKilled: true, disabledIds }), durationSeconds: 10 },
   ];
 }
 

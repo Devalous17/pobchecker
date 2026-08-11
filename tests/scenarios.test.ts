@@ -68,6 +68,14 @@ describe("combat scenarios", () => {
     expect(byId.sustained.config.enemyIsBoss).toBe("Pinnacle");
     expect(byId.sustained.config.resetAllConditions).toBe(true);
   });
+  it("removes manually disabled source-backed conditions from alternate profiles", () => {
+    const build = parsePobXml(examplePobFixture);
+    const profiles = buildScenarioProfiles(build, detectConditions(build), ["power-charges", "enemy-low-life", "curse-playerCursedWithPunishment"]);
+    const byId = Object.fromEntries(profiles.map((profile) => [profile.id, profile]));
+    expect(byId.peak.config.usePowerCharges).toBe(false);
+    expect(byId.peak.config.conditionEnemyLowLife).toBe(false);
+    expect(byId.recommended.config.playerCursedWithPunishment).toBeUndefined();
+  });
   it("carries imported skill mode and count into alternate scenarios", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><mainSocketGroup>1</mainSocketGroup></Build><Skills><SkillSet id="1"><Skill mainActiveSkill="1"><Gem nameSpec="Example Skill" name="Example Skill"/></Skill></SkillSet></Skills><Config><Input name="skillPartCalcs" number="2"/><Input name="skillCount" number="4"/></Config></PathOfBuilding>`);
     const profiles = buildScenarioProfiles(build, detectConditions(build));
