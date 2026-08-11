@@ -169,6 +169,7 @@ function FigmaRatingReveal({ report, exiting, onDismiss }: { report: Report; exi
 
   return <div className="rating-reveal-layer" aria-live="assertive">
     <section className={`rating-reveal-card ${exiting ? "is-exiting" : ""}`} data-rating-reveal role="status" aria-label="Build rating">
+      <span className="rating-reveal-dopamine" aria-hidden="true">DOPAMINE</span>
       <div className="rating-reveal-head">
         <div>
           <span>BUILD ANALYZED</span>
@@ -405,7 +406,7 @@ function FigmaReportView({ report: inputReport, onReset, scenarioResult, onScena
   const correctedQuality = scenarioResult ? recalculateBuildQuality(inputReport.quality, inputReport.build, inputReport.conditions.map((condition) => ({ reliability: condition.reliability })), scenarioResult) : inputReport.quality;
   const report = scenarioResult ? { ...inputReport, quality: correctedQuality } : inputReport;
   const tabProps = { report, scenarioResult, onScenarioResult };
-  return <main id="report" className="figma-workbench">
+  return <main id="report" key={activeTab} className="figma-workbench">
     {activeTab === "overview" && <StaticOverviewTab report={report} />}
     {activeTab === "offence" && <StaticOffenceTab report={report} />}
     {activeTab === "defence" && <StaticDefenceTab report={report} />}
