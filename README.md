@@ -17,3 +17,23 @@ Imported values are authoritative values from the PoB export, not invented estim
 Run `npm run dev` for the local app. Validation commands are `npm run typecheck`, `npm run lint`, `npm run unit`, `npm run e2e`, and `npm run build`.
 
 The official Path of Building engine is kept separate from the TypeScript importer. The worker clones a pinned Path of Building Community revision and uses its headless wrapper for scenario recalculation; the application does not reimplement PoB's calculation engine. See `docs/engine-integration.md` for the Docker worker command.
+
+## Bulk PoB benchmark collection
+
+The local collector accepts folders or files containing PoB import codes, raw
+PoB XML, or exported `.pob` files. It decodes and deduplicates the builds, then
+writes compact normalized records that can be used for rating calibration.
+
+```powershell
+node scripts/collect-pob-benchmarks.mjs .\data\benchmarks\incoming
+```
+
+Use `--dry-run` to validate a batch without writing the dataset. The collector
+stores imported metrics and build context, but leaves clear, bossing, and
+defence labels empty until they are deliberately reviewed as calibration
+benchmarks. When you know an archetype more reliably than the export can expose
+it, you can preserve a human-confirmed label, for example:
+
+```powershell
+node scripts/collect-pob-benchmarks.mjs .\data\benchmarks\incoming --delivery=mine
+```

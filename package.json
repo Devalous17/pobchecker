@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "unit": "vitest run --config vitest.config.mjs",
     "e2e": "playwright test",
+    "benchmarks:collect": "node scripts/collect-pob-benchmarks.mjs",
     "engine:serve": "node services/pob-engine/server.mjs",
     "db:generate": "drizzle-kit generate"
   },

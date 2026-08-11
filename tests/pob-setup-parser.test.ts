@@ -23,6 +23,12 @@ describe("PoB skill and equipment import", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill stat="4x Storm Burst of Repulsion" source="" /></Build><Skills><SkillSet id="1"><Skill slot="Weapon 2"><Gem nameSpec="Decoy Totem" name="Decoy Totem" /></Skill><Skill slot="Body Armour"><Gem nameSpec="Storm Burst of Repulsion" name="Storm Burst" /></Skill></SkillSet></Skills></PathOfBuilding>`);
     expect(build.mainSkill).toBe("Storm Burst of Repulsion");
   });
+
+  it("never promotes a support gem such as Spell Cascade to the main damage skill", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Spell Cascade"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill><Gem nameSpec="Spell Cascade" name="Spell Cascade"/><Gem nameSpec="Storm Burst of Repulsion" name="Storm Burst"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    expect(build.mainSkill).toBe("Storm Burst of Repulsion");
+    expect(build.damageChannels.map((channel) => channel.skillName)).toEqual(["Storm Burst of Repulsion"]);
+  });
   it("discovers generic damage channels without relying on a specific skill name", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Storm Burst"/></Build><Skills><SkillSet id="1"><Skill includeInFullDPS="true"><Gem nameSpec="Storm Burst" name="Storm Burst"/><Gem nameSpec="Storm Burst Totem" name="Storm Burst Totem"/><Gem nameSpec="Ignite" name="Ignite"/></Skill></SkillSet></Skills></PathOfBuilding>`);
     expect(build.damageChannels.map((channel) => channel.kind)).toEqual(["unknown", "totem", "damage-over-time"]);

@@ -1,4 +1,5 @@
 import type { NormalizedBuild, SourceAsset } from "@/src/types/domain";
+import { refreshDamageSkillIdentity } from "./parse";
 
 type GemMetadata = { color: SourceAsset["attributeColor"]; tags: string[]; requirements: string };
 const cache = new Map<string, Map<string, GemMetadata>>();
@@ -50,7 +51,8 @@ export async function enrichPoBGemMetadata(build: NormalizedBuild): Promise<Norm
     const skillSetups = build.skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map(apply) }));
     const gemByName = new Map(skillSetups.flatMap((setup) => setup.gems.map((gem) => [normalize(gem.name), gem])));
     const sourceAssets = build.sourceAssets.map((asset) => { if (asset.category !== "gem") return asset; const gem = gemByName.get(normalize(asset.name)); return gem ? { ...asset, attributeColor: gem.attributeColor, detail: gem.detail } : asset; });
-    return { ...build, skillSetups, sourceAssets };
+    const metadataAwareSkillSetups = skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map((gem) => ({ ...gem, support: gem.support || (gem.tags ?? []).some((tag) => tag.toLowerCase() === "support") })) }));
+    return refreshDamageSkillIdentity({ ...build, skillSetups: metadataAwareSkillSetups, sourceAssets });
   } catch { return build; }
 }
 

@@ -24,7 +24,12 @@ const fallbackGemColors: Record<string, SourceAsset["attributeColor"]> = {
   "Lightning Penetration": "int", "Infused Channelling": "int", Inspiration: "dex", Punishment: "str", "Sigil of Power": "int",
   "Frost Shield": "int", "Arcane Cloak": "int", "Assassin's Mark": "int",
 };
-const knownSupportGems = new Set(["More Duration", "Increased Critical Damage", "Lightning Penetration", "Infused Channelling", "Inspiration"]);
+const knownSupportGems = new Set([
+  "More Duration", "Increased Critical Damage", "Lightning Penetration", "Infused Channelling", "Inspiration",
+  "Spell Cascade", "Spell Echo", "Unleash", "Intensify", "Concentrated Effect", "Controlled Destruction", "Elemental Focus",
+  "Greater Multiple Projectiles", "Multiple Projectiles", "Fork", "Chain", "Pierce", "GMP", "LMP", "Minefield", "Trap and Mine Damage",
+]);
+const supportNamePattern = /support$|spell cascade|spell echo|unleash|intensify|concentrated effect|controlled destruction|elemental focus|multiple projectiles|trap and mine damage|minefield/i;
 
 const attributeColor = (name: string, gem?: Record<string, unknown>): SourceAsset["attributeColor"] => {
   const raw = String(gem?.["@_colour"] ?? gem?.["@_color"] ?? gem?.["@_attribute"] ?? "").toLowerCase();
@@ -61,7 +66,7 @@ const gemInfo = (gem: any, skill: any): SkillGemInfo | null => {
   const displayName = String(gem?.["@_name"] ?? "").trim() || undefined;
   const level = asNumber(gem?.["@_level"]);
   const quality = asNumber(gem?.["@_quality"]);
-  const support = asBool(gem?.["@_isSupport"] ?? gem?.["@_support"]) || knownSupportGems.has(displayName ?? name);
+  const support = asBool(gem?.["@_isSupport"] ?? gem?.["@_support"]) || knownSupportGems.has(displayName ?? name) || supportNamePattern.test(displayName ?? name);
   const trigger = asBool(skill?.["@_trigger"] ?? skill?.["@_triggered"] ?? gem?.["@_trigger"] ?? gem?.["@_triggered"]);
   const provided = asBool(gem?.["@_isProvided"] ?? gem?.["@_provided"]) || /item provided/i.test(String(gem?.["@_name"] ?? ""));
   const enabled = gem?.["@_enabled"] === undefined ? asBool(skill?.["@_enabled"] ?? true) : asBool(gem?.["@_enabled"]);
@@ -156,14 +161,16 @@ export function parsePobXml(xml: string): NormalizedBuild {
     ? fullDpsNode
     : [fullDpsNode?.["@_source"], fullDpsNode?.["@_name"], fullDpsNode?.["@_stat"], fullDpsNode?.["#text"]].find((value) => String(value ?? "").trim());
   const fullDpsName = String(fullDpsSkill ?? "").replace(/^\d+x\s+/i, "").trim();
-  const activeCandidates = skillSetups.flatMap((setup) => setup.gems.filter((gem) => !gem.support && !gem.provided && !gem.trigger).map((gem) => gem.displayName ?? gem.name));
+  const activeGems = skillSetups.flatMap((setup) => setup.gems.filter((gem) => !gem.support && !gem.provided && !gem.trigger));
+  const activeCandidates = activeGems.map((gem) => gem.name);
   const fullDpsSetupSkill = skillSetups.find((setup) => setup.includeInFullDPS)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
   const mainActiveSkill = skillSetups.find((setup) => setup.mainActiveSkill)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
+  const fullDpsCandidate = activeGems.find((gem) => [gem.name, gem.displayName].some((name) => normalizedSkillName(name ?? "") === normalizedSkillName(fullDpsName)));
   // The socket group marked includeInFullDPS is the strongest signal for the
   // displayed damage skill. Some exports retain an old FullDPSSkill value for
   // a utility skill (for example Decoy Totem) even while another setup is
   // marked as the configured damage setup.
-  const mainSkill = fullDpsSetupSkill?.name || fullDpsName || mainActiveSkill?.name || activeCandidates[0] || skills[0] || "";
+  const mainSkill = fullDpsSetupSkill?.name || fullDpsCandidate?.name || mainActiveSkill?.name || activeCandidates[0] || "";
   const stat = (...names: string[]) => names.map((name) => playerStats.get(name)).find((value) => value !== undefined);
   const importedStats: ImportedStats = {
     source: playerStats.size ? "pob-calcs" : "unavailable",
@@ -215,4 +222,21 @@ export function parsePobXml(xml: string): NormalizedBuild {
   };
   const identityName = String(build?.["@_name"] ?? "").trim() || mainSkill || "Unnamed build";
   return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, damageChannels, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
+}
+
+const normalizedSkillName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** Re-selects the displayed damage skill after PoB gem metadata has been enriched. */
+export function refreshDamageSkillIdentity(build: NormalizedBuild): NormalizedBuild {
+  const isDamageGem = (gem: SkillGemInfo) => gem.enabled && !gem.support && !gem.provided && !gem.trigger && !(gem.tags ?? []).some((tag) => tag.toLowerCase() === "support");
+  const fullDpsSetup = build.skillSetups.find((setup) => setup.includeInFullDPS);
+  const mainActiveSetup = build.skillSetups.find((setup) => setup.mainActiveSkill);
+  const candidates = [
+    fullDpsSetup?.gems.find(isDamageGem),
+    mainActiveSetup?.gems.find(isDamageGem),
+    ...build.skillSetups.flatMap((setup) => setup.gems.filter(isDamageGem)),
+  ].filter((gem): gem is SkillGemInfo => Boolean(gem));
+  const existing = candidates.find((gem) => normalizedSkillName(gem.name) === normalizedSkillName(build.mainSkill ?? ""));
+  const mainSkill = existing?.name ?? candidates[0]?.name;
+  return { ...build, mainSkill, damageChannels: discoverDamageChannels(build.skillSetups) };
 }

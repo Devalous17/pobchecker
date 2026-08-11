@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { EngineStatus } from "@/src/features/engine/client";
 import type { ScenarioReport } from "@/src/features/scenarios/model";
 import { applyScenarioSnapshots } from "@/src/features/analysis/layers";
@@ -130,13 +130,15 @@ function LegacyAnalyzer() {
 }
 void LegacyAnalyzer;
 
+const ScenarioResultContext = createContext<ScenarioReport | null>(null);
+
 function ReportView({ report, onReset, activeTab, setActiveTab }: { report: Report; onReset: () => void; activeTab?: ReportTab; setActiveTab?: (tab: ReportTab) => void }) {
   const [scenarioResult, setScenarioResult] = useState<ScenarioReport | null>(null);
   const quality = scenarioResult ? recalculateBuildQuality(report.quality, report.build, report.conditions.map((condition) => ({ reliability: condition.reliability })), scenarioResult) : report.quality;
   const ratingText = (rating: BuildQuality["overall"]) => rating.score === null ? "?" : `${rating.score.toFixed(1)}/10`;
   void quality;
   void ratingText;
-  return <FigmaReportView report={report} onReset={onReset} scenarioResult={scenarioResult} onScenarioResult={setScenarioResult} activeTab={activeTab ?? "overview"} setActiveTab={setActiveTab ?? (() => undefined)} />;
+  return <ScenarioResultContext.Provider value={scenarioResult}><FigmaReportView report={report} onReset={onReset} scenarioResult={scenarioResult} onScenarioResult={setScenarioResult} activeTab={activeTab ?? "overview"} setActiveTab={setActiveTab ?? (() => undefined)} /></ScenarioResultContext.Provider>;
   return <><section className="quality-hero"><div><p className="eyebrow">Build quality overview</p><h2>How good is this build?</h2><p className="muted">A weakest-link rating based on imported PoB offence, effective hit pool, maximum-hit evidence, and configured-condition risk. It is a transparent screening score, not a universal tier list.</p></div><div className="quality-overall"><span>{scenarioResult ? "CORRECTED OVERALL" : "OVERALL"}</span><strong>{ratingText(quality.overall)}</strong><b>{quality.overall.grade}</b><em>{quality.overall.label}</em></div><div className="quality-breakdown"><div><span>OFFENCE</span><strong>{ratingText(quality.offence)}</strong><b>{quality.offence.grade}</b></div><div><span>DEFENCE</span><strong>{ratingText(quality.defence)}</strong><b>{quality.defence.grade}</b></div></div><div className="quality-rating-dps"><span>RATING DPS SOURCE</span><strong>{quality.ratingDps.value === null ? "Unavailable" : compactNumber(quality.ratingDps.value)}</strong><small>{quality.ratingDps.label} · {quality.ratingDps.origin.replace("worker-", "worker ")}</small>{quality.ratingDps.differencePercent !== undefined && <em className={`quality-verification quality-verification-${quality.ratingDps.verification}`}>{quality.ratingDps.verification === "matched" ? "Matches imported PoB" : `PoB comparison: ${quality.ratingDps.differencePercent >= 0 ? "+" : ""}${quality.ratingDps.differencePercent.toFixed(1)}%`}</em>}</div><div className="quality-basis"><strong>Why this score</strong>{quality.overall.basis.map((item) => <span key={item}>{item}</span>)}<span>{quality.ratingDps.explanation}</span></div></section><ModernReportView report={report} onReset={onReset} scenarioResult={scenarioResult} onScenarioResult={setScenarioResult} /> </>;
 }
 
@@ -161,7 +163,7 @@ function FigmaChrome({ report, source, setSource, loading, onAnalyze, activeTab,
   return <>
     <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a></nav></div>
     <header className="mainbar figma-mainbar">
-      <a className="brand-lockup" href="#analyze" aria-label="PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">Build quality &amp; reality analysis</div></div></a>
+      <a className="brand-lockup" href="#analyze" aria-label="PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></a>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
         {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
       </nav>
@@ -230,11 +232,64 @@ function FigmaReportView({ report: inputReport, onReset, scenarioResult, onScena
 
 function FigmaOverviewRatingGrid({ ratings }: { ratings: BuildQuality["categoryRatings"] }) {
   const entries: Array<[keyof typeof ratings, string]> = [["dps", "DPS"], ["clear", "Clear"], ["defence", "Defence"], ["bossing", "Bossing"]];
-  return <div className="figma-overview-rating-grid" aria-label="Main skill ratings">{entries.map(([key, label]) => { const item = ratings[key]; return <div className="figma-overview-rating" key={key}><span>{label}</span><strong>{item.score === null ? "?" : item.score.toFixed(1)}</strong><b>{item.grade}</b><small>{item.confidence} confidence</small>{key === "clear" && <em>{item.basis[1]}</em>}{key === "bossing" && <em>{item.basis[1]}</em>}</div>; })}</div>;
+  const delivery = ratings.bossing.basis.find((item) => item.startsWith("Delivery model:"))?.replace("Delivery model: ", "").split(".")[0] ?? "Not identified";
+  const clearEvidence = ratings.clear.basis[1] ?? "No direct coverage evidence";
+  return <><div className="figma-overview-rating-grid" aria-label="Main skill ratings">{entries.map(([key, label]) => { const item = ratings[key]; return <div className="figma-overview-rating" key={key}><span>{label}</span><strong>{item.score === null ? "?" : item.score.toFixed(1)}</strong><b>{item.grade}</b><small>{item.confidence} confidence</small>{key === "clear" && <em>{item.basis[1]}</em>}{key === "bossing" && <em>{item.basis[1]}</em>}</div>; })}</div><div className="figma-capability-rail" aria-label="Detected main build capabilities"><div><span>MAIN DELIVERY</span><strong>{delivery}</strong></div><div><span>CLEAR EVIDENCE</span><strong>{clearEvidence}</strong></div><div><span>RATING SCOPE</span><strong>Selected main setup · PoB-backed</strong></div></div></>;
 }
 
-function FigmaQualityOverview({ report }: { report: Report }) {
+function FigmaQualityOverviewLegacy({ report }: { report: Report }) {
   return <FigmaPanel title="Build quality overview" eyebrow="Build quality overview" className="figma-quality-panel"><div className="figma-quality-grid"><div className="figma-quality-copy"><h1>How good is this build?</h1><p>A weakest-link rating derived from imported PoB offence, effective hit pool, maximum-hit evidence, and configured-condition risk. This is a transparent screening score, not a promise that a character survives every encounter.</p><ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul></div><FigmaScore label="Overall" rating={report.quality.overall} /><div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" /></div></div><div className="figma-rating-source"><span>RATING DPS</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label} · {report.quality.ratingDps.origin.replace("worker-", "worker ")}</small></div><FigmaOverviewRatingGrid ratings={report.quality.categoryRatings} /></FigmaPanel>;
+}
+
+void FigmaQualityOverviewLegacy;
+
+function FigmaQualityOverview({ report, scenarioResult = null }: { report: Report; scenarioResult?: ScenarioReport | null }) {
+  type ScenarioKey = "configured" | "peak" | "burst" | "sustained" | "unconditional";
+  const liveScenarioResult = useContext(ScenarioResultContext);
+  scenarioResult = scenarioResult ?? liveScenarioResult;
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioKey>("configured");
+  const scenarioMetricValue = (key: keyof ScenarioReport) => {
+    const metric = scenarioResult?.[key];
+    if (!metric || typeof metric !== "object" || !("value" in metric)) return null;
+    return isNumber(metric.value) ? metric.value : null;
+  };
+  const configuredValue = isNumber(report.build.importedStats.fullDps) ? report.build.importedStats.fullDps : null;
+  const scenarioCards: Array<{ key: ScenarioKey; label: string; value: number | null; source: string; detail: string }> = [
+    { key: "configured", label: "Configured PoB", value: configuredValue, source: "Imported snapshot", detail: "Every condition selected in the export" },
+    { key: "peak", label: "Highest valid", value: scenarioMetricValue("peak"), source: "Evidence-backed state", detail: "Compatible sourced conditions only" },
+    { key: "burst", label: "Realistic burst", value: scenarioMetricValue("burst"), source: "Practical boss window", detail: "Temporary effects with activation limits" },
+    { key: "sustained", label: "Sustained boss", value: scenarioMetricValue("sustained"), source: "Timeline estimate", detail: "Time-weighted across the encounter" },
+    { key: "unconditional", label: "Unconditional", value: scenarioMetricValue("unconditional"), source: "Baseline state", detail: "Supported conditions disabled" },
+  ];
+  const selected = scenarioCards.find((card) => card.key === selectedScenario) ?? scenarioCards[0];
+  const peakValue = scenarioMetricValue("peak");
+  const realityRatio = configuredValue && peakValue !== null && configuredValue > 0 ? Math.max(0, Math.min(1, peakValue / configuredValue)) : null;
+  const difference = configuredValue && peakValue !== null && configuredValue > 0 ? Math.round((1 - peakValue / configuredValue) * 100) : null;
+  const reviewCount = report.conditions.filter((condition) => !condition.sourceDetected || condition.reliability !== "Reliable").length;
+  const detectedCount = report.conditions.filter((condition) => condition.sourceDetected).length;
+  return <FigmaPanel title="Build quality overview" eyebrow="The PoB claim versus the fight you can actually sustain" className="figma-quality-panel">
+    <div className="figma-quality-grid">
+      <div className="figma-quality-copy">
+        <span className="figma-verdict-kicker">THE REALITY CHECK</span>
+        <h1>How good is this build in reality?</h1>
+        <p>Path of Building shows a configured snapshot. PoB Reality Check separates that ceiling from the damage and defence your build can support during an actual encounter.</p>
+        <div className="figma-verdict-line"><span>THIS REPORT MEASURES</span><strong>Power - reliability - survivability</strong></div>
+        <ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+      </div>
+      <FigmaScore label="Overall build" rating={report.quality.overall} />
+      <div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" /></div>
+    </div>
+    <div className="figma-reality-ladder" aria-label="Combat reality scenarios">
+      <div className="figma-subsection-heading"><div><span>THE NUMBER THAT MATTERS</span><strong>Choose a combat state</strong></div><small>{scenarioResult ? "Worker states loaded" : "Run scenarios to separate the PoB ceiling"}</small></div>
+      <div className="figma-scenario-selector" role="tablist" aria-label="Combat reality scenarios">{scenarioCards.map((card) => <button type="button" role="tab" aria-selected={selectedScenario === card.key} className={`figma-scenario-card ${selectedScenario === card.key ? "active" : ""} ${card.value === null ? "unavailable" : ""}`} key={card.key} onClick={() => setSelectedScenario(card.key)}><span>{card.label}</span><strong>{card.value === null ? "-" : compactNumber(card.value)}</strong><small>{card.source}</small></button>)}</div>
+      <div className="figma-selected-scenario"><div><span>SELECTED STATE</span><strong>{selected.label}</strong><p>{selected.detail}</p></div><b>{selected.value === null ? "Worker required" : compactNumber(selected.value)}</b></div>
+    </div>
+    <div className="figma-reality-proof"><div><span>POB CEILING USED FOR RATING</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label} - {report.quality.ratingDps.origin.replace("worker-", "worker ")}</small></div><div><span>CONDITIONS WITH EVIDENCE</span><strong>{detectedCount}</strong><small>Source-backed effects found in the build</small></div><div><span>NEEDS REVIEW</span><strong>{reviewCount}</strong><small>Temporary, situational, ramping, or unverified dependencies</small></div></div>
+    <div className="figma-reality-gap"><div><span>CONFIGURED CEILING</span><strong>{configuredValue === null ? "Unavailable" : compactNumber(configuredValue)}</strong></div><div className="figma-reality-track" aria-label="Configured versus highest valid DPS"><span style={{ width: realityRatio === null ? "0%" : `${realityRatio * 100}%` }} /></div><div><span>HIGHEST VALID</span><strong>{peakValue === null ? "Worker required" : compactNumber(peakValue)}</strong></div><p>{difference === null ? "Run the authoritative worker to measure how much of the configured state survives the reality check." : `The evidence-backed peak is ${difference}% below the configured PoB ceiling.`}</p></div>
+    <div className="figma-rating-source"><span>RATING SCOPE</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>Ratings are anchored to imported PoB output, then tempered by defence and conditional risk.</small></div>
+    <div className="figma-subsection-heading figma-rating-heading"><div><span>HOW THE SCORE IS BUILT</span><strong>Performance across real combat jobs</strong></div><small>Not a leaderboard - evidence-backed screening</small></div>
+    <FigmaOverviewRatingGrid ratings={report.quality.categoryRatings} />
+  </FigmaPanel>;
 }
 
 function FigmaOverviewTab({ report, scenarioResult, onScenarioResult }: { report: Report; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void }) {
@@ -287,8 +342,9 @@ function ModernReportView({ report: inputReport, onReset, scenarioResult, onScen
   const stats = report.build.importedStats;
   const normalizedMainSkill = (report.build.mainSkill ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const mainSetup = report.build.skillSetups.find((setup) => setup.includeInFullDPS) ?? report.build.skillSetups.find((setup) => setup.gems.some((gem) => (gem.displayName ?? gem.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill)) ?? report.build.skillSetups.find((setup) => setup.mainActiveSkill) ?? report.build.skillSetups[0];
-  const mainSkill = mainSetup?.gems.find((gem) => normalizedMainSkill && (gem.displayName ?? gem.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill) ?? mainSetup?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger) ?? mainSetup?.gems[0];
-  const mainSkillLabel = mainSetup?.includeInFullDPS ? (mainSkill?.name ?? mainSkill?.displayName ?? report.build.mainSkill ?? report.build.identity.name) : (report.build.mainSkill ?? mainSkill?.name ?? mainSkill?.displayName ?? report.build.identity.name);
+  const damageGems = mainSetup?.gems.filter((gem) => gem.enabled && !gem.support && !gem.provided && !gem.trigger) ?? [];
+  const mainSkill = damageGems.find((gem) => normalizedMainSkill && (gem.displayName ?? gem.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill) ?? damageGems[0];
+  const mainSkillLabel = mainSkill?.name ?? mainSkill?.displayName ?? report.build.mainSkill ?? report.build.identity.name;
   const offenceConditions = report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both");
   const defenceConditions = report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both");
   const overviewStats = statRows(stats, [
@@ -325,7 +381,7 @@ function ModernReportView({ report: inputReport, onReset, scenarioResult, onScen
 
 const snapshotLabels: Array<[LayerSnapshotState, string]> = [["baseline", "Baseline"], ["typical", "Typical"], ["peak", "Peak"]];
 
-function LayerAnalysisPanel({ analysis, scenarios, build, conditions }: { analysis: BuildLayerAnalysis; scenarios: ScenarioReport | null; build?: { mainSkill?: string; skills: string[] }; conditions?: { reliability: string }[] }) {
+function LayerAnalysisPanel({ analysis, scenarios, build, conditions }: { analysis: BuildLayerAnalysis; scenarios: ScenarioReport | null; build?: { mainSkill?: string; skills: string[]; skillSetups: SkillSetup[] }; conditions?: { reliability: string }[] }) {
   const effectiveAnalysis = scenarios ? applyScenarioSnapshots(analysis, scenarios, build, conditions) : analysis;
   return <section className="layer-analyzer panel-frame"><div className="layer-analyzer-header"><div><p className="eyebrow">Build layer analyzer</p><h3>Why the build performs this way</h3><p>Baseline disables supported combat conditions and guard inputs. Typical is the imported PoB configuration. Peak enables only the detected, source-backed scenario inputs that can overlap.</p></div><span className="layer-analyzer-badge">{scenarios ? "WORKER STATES LOADED" : "RUN SCENARIOS TO COMPARE"}</span></div><div className="layer-columns"><LayerColumn title="Offence layers" side="offence" group={effectiveAnalysis.offence} /><LayerColumn title="Defence layers" side="defence" group={effectiveAnalysis.defence} /></div><div className="layer-analyzer-notes"><strong>Current limitations</strong>{effectiveAnalysis.limitations.map((limitation) => <span key={limitation}>{limitation}</span>)}</div></section>;
 }

@@ -10,6 +10,7 @@ import type {
   QualityRating,
 } from "@/src/types/domain";
 import type { ScenarioReport } from "@/src/features/scenarios/model";
+import type { CapabilityBuild } from "./capabilities";
 import { scenarioOffenceRating } from "./quality";
 
 const gradeFor = (score: number): QualityGrade => score >= 9 ? "S" : score >= 8 ? "A" : score >= 7 ? "B" : score >= 6 ? "C" : score >= 5 ? "D" : score >= 3 ? "E" : "F";
@@ -80,7 +81,7 @@ function scenarioRecovery(defence: Record<string, number | null> | undefined): n
  * value remains the Typical snapshot; only Baseline and Peak are replaced here.
  * This keeps the report honest when the worker is unavailable or omits a field.
  */
-export function applyScenarioSnapshots(analysis: BuildLayerAnalysis, scenarios: ScenarioReport, build?: Pick<NormalizedBuild, "mainSkill" | "skills">, conditions: Array<{ reliability: string }> = []): BuildLayerAnalysis {
+export function applyScenarioSnapshots(analysis: BuildLayerAnalysis, scenarios: ScenarioReport, build?: CapabilityBuild, conditions: Array<{ reliability: string }> = []): BuildLayerAnalysis {
   const correctedDps = scenarios.recommended?.value ?? scenarios.peak.value ?? scenarios.configured.value;
   const correctedOffence = correctedDps === null || correctedDps === undefined || !build ? analysis.offence.rating : scenarioOffenceRating(correctedDps, build, conditions);
   const updateFinding = (finding: BuildLayerFinding): BuildLayerFinding => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBuildQuality, dpsStrengthScore, DPS_CALIBRATION_ANCHORS, importedRatingDps, recalculateBuildQuality } from "../src/features/analysis/quality";
+import { calculateBuildQuality, dpsStrengthScore, DPS_CALIBRATION_ANCHORS, importedRatingDps, recalculateBuildQuality, scenarioOffenceRating } from "../src/features/analysis/quality";
 import type { ScenarioReport } from "../src/features/scenarios/model";
 import { parsePobXml } from "../src/features/pob/parse";
 
@@ -27,10 +27,24 @@ describe("build quality rating", () => {
   });
 
   it("grades a sourced, well-rounded imported snapshot from its evidence", () => {
-    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="80000000"/><PlayerStat stat="TotalEHP" value="150000"/><PlayerStat stat="PhysicalMaximumHitTaken" value="30000"/><PlayerStat stat="FireMaximumHitTaken" value="80000"/><PlayerStat stat="ChaosMaximumHitTaken" value="30000"/></Build></PathOfBuilding>`);
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="80000000"/><PlayerStat stat="TotalEHP" value="150000"/><PlayerStat stat="Armour" value="30000"/><PlayerStat stat="EffectiveBlockChance" value="75"/><PlayerStat stat="EffectiveSpellBlockChance" value="75"/><PlayerStat stat="PhysicalMaximumHitTaken" value="80000"/><PlayerStat stat="FireMaximumHitTaken" value="80000"/><PlayerStat stat="ColdMaximumHitTaken" value="80000"/><PlayerStat stat="ChaosMaximumHitTaken" value="80000"/><PlayerStat stat="FireResist" value="75"/><PlayerStat stat="ColdResist" value="75"/><PlayerStat stat="LightningResist" value="75"/><PlayerStat stat="ChaosResist" value="0"/></Build></PathOfBuilding>`);
     const quality = calculateBuildQuality(build, []);
     expect(quality.overall.score).toBeGreaterThanOrEqual(8);
     expect(["S", "A"]).toContain(quality.overall.grade);
+  });
+
+  it("treats capped elemental resistance and zero chaos resistance as the defence floor", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="1000000"/><PlayerStat stat="TotalEHP" value="5000"/><PlayerStat stat="PhysicalMaximumHitTaken" value="5000"/><PlayerStat stat="FireResist" value="75"/><PlayerStat stat="ColdResist" value="75"/><PlayerStat stat="LightningResist" value="75"/><PlayerStat stat="ChaosResist" value="0"/></Build></PathOfBuilding>`);
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.defence.score).toBeGreaterThanOrEqual(3.5);
+    expect(quality.defence.basis.some((item) => item.includes("3.5/3.5"))).toBe(true);
+  });
+
+  it("rewards a layered endurance-style tank instead of using the weakest max hit", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="1000000"/><PlayerStat stat="TotalEHP" value="266000"/><PlayerStat stat="Armour" value="90000"/><PlayerStat stat="EffectiveBlockChance" value="75"/><PlayerStat stat="EffectiveSpellBlockChance" value="75"/><PlayerStat stat="EffectiveSpellSuppressionChance" value="100"/><PlayerStat stat="PhysicalMaximumHitTaken" value="69000"/><PlayerStat stat="FireMaximumHitTaken" value="266000"/><PlayerStat stat="ColdMaximumHitTaken" value="266000"/><PlayerStat stat="LightningMaximumHitTaken" value="266000"/><PlayerStat stat="ChaosMaximumHitTaken" value="20000"/><PlayerStat stat="FireResist" value="90"/><PlayerStat stat="ColdResist" value="90"/><PlayerStat stat="LightningResist" value="90"/><PlayerStat stat="ChaosResist" value="50"/></Build></PathOfBuilding>`);
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.defence.score).toBeGreaterThanOrEqual(9.5);
+    expect(quality.defence.basis.some((item) => item.includes("weakest type"))).toBe(true);
   });
 
   it("ignores an exported zero FullDPS when a positive TotalDPS exists", () => {
@@ -54,6 +68,23 @@ describe("build quality rating", () => {
     expect(quality.ratingDps.differencePercent).toBeCloseTo(-38.4615, 3);
   });
 
+  it("uses the corrected worker value when the export only has a hit-DPS fallback", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="TotalDPS" value="800000"/><PlayerStat stat="TotalEHP" value="80000"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Storm Burst of Repulsion" name="Storm Burst"/><Gem nameSpec="Spell Totem Support" name="Spell Totem Support" isSupport="true"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    const before = calculateBuildQuality(build, []);
+    const scenarios = { recommended: { value: 190_000_000 }, configured: { value: 800_000 } } as unknown as ScenarioReport;
+    const after = recalculateBuildQuality(before, build, [], scenarios);
+    expect(after.ratingDps.origin).toBe("worker-typical");
+    expect(after.ratingDps.value).toBe(190_000_000);
+    expect(after.offence.score).toBeGreaterThan(before.offence.score!);
+  });
+
+  it("includes peer benchmark context in the recalibrated offence evidence", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="TotalDPS" value="56000000"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Remote Mine" name="Remote Mine"/><Gem nameSpec="Minefield Support" name="Minefield Support" isSupport="true"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    const rating = scenarioOffenceRating(56_000_000, build, []);
+    expect(rating.basis.some((item) => item.includes("Peer calibration"))).toBe(true);
+    expect(rating.basis.some((item) => item.includes("Peer score for mine"))).toBe(true);
+  });
+
   it("uses PoB DoT DPS when hit DPS fields are zero", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="0"/><PlayerStat stat="TotalDotDPS" value="14768527"/><PlayerStat stat="TotalEHP" value="155817"/><PlayerStat stat="PhysicalMaximumHitTaken" value="48493"/></Build></PathOfBuilding>`);
     const quality = calculateBuildQuality(build, []);
@@ -67,5 +98,14 @@ describe("build quality rating", () => {
     expect(quality.offence.score).toBeGreaterThanOrEqual(8.4);
     expect(quality.offence.score).toBeLessThan(8.7);
     expect(quality.offence.grade).toBe("A");
+  });
+
+  it("does not penalize a trap main setup for unrelated utility summons", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="TotalDPS" value="23700000000"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Blade Blast" name="Blade Blast"/><Gem nameSpec="Trap Support" name="Trap Support" isSupport="true"/></Skill></SkillSet><SkillSet id="2"><Skill><Gem nameSpec="Raise Spectre" name="Raise Spectre"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    const rating = scenarioOffenceRating(23_700_000_000, build, [{ reliability: "Conditional" }, { reliability: "Conditional" }]);
+    expect(rating.score).toBe(10);
+    expect(rating.basis.some((item) => item.includes("Main delivery model: trap"))).toBe(true);
+    expect(rating.basis.some((item) => item.includes("reduce the practical score"))).toBe(false);
+    expect(rating.basis.some((item) => item.includes("conditional or temporary"))).toBe(true);
   });
 });

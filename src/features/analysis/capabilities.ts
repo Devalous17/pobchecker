@@ -18,7 +18,7 @@ export function inferSkillCapabilities(build: CapabilityBuild): SkillCapabilityP
   const mainSetupText = mainSetup?.gems.map((gem) => `${gem.name} ${gem.displayName ?? ""} ${gem.detail}`).join(" ") ?? "";
   const allSetupText = build.skillSetups.flatMap((setup) => setup.gems.map((gem) => `${gem.name} ${gem.displayName ?? ""} ${gem.detail}`)).join(" ");
   const text = `${build.mainSkill ?? ""} ${mainSetupText}`.toLowerCase();
-  const deliveryText = `${build.mainSkill ?? ""} ${build.skills.join(" ")} ${allSetupText}`.toLowerCase();
+  const deliveryText = `${build.mainSkill ?? ""} ${mainSetupText || allSetupText}`.toLowerCase();
   const delivery: DeliveryKind = /totem|ballista/.test(deliveryText)
     ? "totem/ballista"
     : /minion|summon|skeleton|zombie|spectre|golem|absolution|animate|spider|sentinel|srs/.test(deliveryText)
