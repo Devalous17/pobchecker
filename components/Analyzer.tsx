@@ -135,7 +135,7 @@ export function Analyzer() {
     <p className="privacy">Only supported pobb.in links are fetched. Direct PoB codes do not contact PoE accounts. Results are analysis estimates, not gameplay guarantees.</p>
   </section>;
 
-  return <><FigmaChrome report={report} source={source} setSource={setSource} loading={loading} onAnalyze={() => void analyze()} onReset={() => { setReport(null); setShowRatingReveal(false); setActiveTab("overview"); window.history.replaceState({}, "", "/"); }} activeTab={activeTab} setActiveTab={setActiveTab} />{report && showRatingReveal && <FigmaRatingReveal report={report} exiting={ratingRevealExiting} onDismiss={() => { setRatingRevealExiting(true); window.setTimeout(() => setShowRatingReveal(false), 300); }} />}{content}</>;
+  return <><FigmaChrome report={report} source={source} setSource={setSource} loading={loading} onAnalyze={() => void analyze()} onReset={() => { setReport(null); setShowRatingReveal(false); setActiveTab("overview"); window.history.replaceState({}, "", "/"); }} activeTab={activeTab} setActiveTab={setActiveTab} />{report && showRatingReveal && <FigmaRatingReveal report={report} exiting={ratingRevealExiting} onDismiss={() => { setRatingRevealExiting(true); window.setTimeout(() => setShowRatingReveal(false), 300); }} />}{content}<footer className="site-footer">Made by Devalous</footer></>;
 }
 void TabbedAnalyzer;
 
@@ -242,7 +242,7 @@ function FigmaConditionsTabV2({ report, scenarioResult, onScenarioResult }: { re
 function FigmaChrome({ report, source, setSource, loading, onAnalyze, onReset, activeTab, setActiveTab }: { report: Report | null; source: string; setSource: (value: string) => void; loading: boolean; onAnalyze: () => void; onReset: () => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
   const identity = report?.build.identity;
   return <>
-    <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a></nav></div>
+    <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a><span className="site-credit">Made by Devalous</span></nav></div>
     <header className="mainbar figma-mainbar">
       <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
