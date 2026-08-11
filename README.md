@@ -1,43 +1,54 @@
-<<<<<<< HEAD
 # PoB Reality Check
 
-PoB Reality Check is a Path of Exile 1 build-analysis tool that explains how realistic configured Path of Building conditions are. It imports supported `pobb.in` links, decodes the export, reads PoB's own exported calculation snapshot, resolves allocated passive nodes from the official PoB tree data, and reports build identity plus uncertainty-aware condition findings.
+PoB Reality Check is a free Path of Exile 1 website that reviews a build from Path of Building and gives it an honest rating.
 
-The current report includes:
+It shows:
 
-- the main configured DPS skill as the build title;
-- Full PoB DPS, configured skill DPS, average hit, life, EHP, block, suppression, and maximum-hit values when PoB exported them;
-- a named passive-tree preview from the active PoB tree specification;
-- linked gems, items, flasks, ascendancy sources, and supported configured conditions;
-- separate source-backed, temporary, situational, mapping-only, and unverified findings.
+- Overall, offence, defence, clear, and bossing grades
+- Imported DPS, life, energy shield, resistances, recovery, and maximum-hit values
+- Defence targets and practical improvement gaps
+- Reliable, conditional, temporary, and unverified build conditions
+- General offence and defence advice for normal Tier 16 mapping
+- Imported skills, gems, equipment, flasks, and build information
 
-Imported values are authoritative values from the PoB export, not invented estimates. Alternate peak, burst, sustained, initial, bossing, and mapping scenarios use the isolated Headless PoB worker when it is configured; otherwise the app deliberately shows them as unavailable.
+## Recommended input
 
-## Development
+Use a correctly configured personal PoB export shared through `pobb.in`. This is the most accurate source because it preserves the skills, equipment, passives, conditions, and DPS settings you actually use.
 
-Run `npm run dev` for the local app. Validation commands are `npm run typecheck`, `npm run lint`, `npm run unit`, `npm run e2e`, and `npm run build`.
+PoE Ninja import codes are supported as a fallback, but they may be incomplete or configured differently from the original build.
 
-The official Path of Building engine is kept separate from the TypeScript importer. The worker clones a pinned Path of Building Community revision and uses its headless wrapper for scenario recalculation; the application does not reimplement PoB's calculation engine. See `docs/engine-integration.md` for the Docker worker command.
+## What the rating means
 
-## Bulk PoB benchmark collection
+The rating is an evidence-based build-quality score, not a promise that a character will survive every encounter. It uses the values exported by PoB and explains why the build received its grade.
 
-The local collector accepts folders or files containing PoB import codes, raw
-PoB XML, or exported `.pob` files. It decodes and deduplicates the builds, then
-writes compact normalized records that can be used for rating calibration.
+The website does not run alternate combat scenarios or pretend to calculate values that were not included in the imported PoB snapshot.
 
-```powershell
-node scripts/collect-pob-benchmarks.mjs .\data\benchmarks\incoming
-```
+## Run locally
 
-Use `--dry-run` to validate a batch without writing the dataset. The collector
-stores imported metrics and build context, but leaves clear, bossing, and
-defence labels empty until they are deliberately reviewed as calibration
-benchmarks. When you know an archetype more reliably than the export can expose
-it, you can preserve a human-confirmed label, for example:
+Install dependencies, then start the development server:
 
 ```powershell
-node scripts/collect-pob-benchmarks.mjs .\data\benchmarks\incoming --delivery=mine
+npm install
+npm run dev
 ```
-=======
-# pobchecker
->>>>>>> ba53bf4ae88ac5d1f58f5b0b253c9d9dacd12493
+
+Open the local address shown in the terminal.
+
+## Validate the project
+
+```powershell
+npm run typecheck
+npm run build
+```
+
+## Deploy
+
+The website can be deployed as a free Render web service from the GitHub repository:
+
+- Repository: `Devalous17/pobchecker`
+- Branch: `main`
+- Runtime: Node
+- Build command: `npm install && npm run build`
+- Start command: `npm run start`
+
+Made by Devalous.
