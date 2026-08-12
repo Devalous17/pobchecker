@@ -127,10 +127,14 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   // point of the minimum defensive foundation.
   const elementalResists = [stats.fireResistance, stats.coldResistance, stats.lightningResistance];
   const cappedElemental = elementalResists.filter((value) => typeof value === "number" && value >= 75).length;
-  const resistanceScore = cappedElemental + (typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
+  const evidenceText = `${build.rawXml} ${build.sources.map((source) => `${source.name} ${source.detail}`).join(" ")} ${build.passiveNodes.map((node) => node.name).join(" ")}`.toLowerCase();
+  const chaosImmuneEvidence = /chaos inoculation|chaos inoculation keystone|\bci keystone\b/.test(evidenceText)
+    || ((stats.life ?? 0) <= 1 && (stats.energyShield ?? 0) > 0);
+  const resistanceScore = cappedElemental + (!chaosImmuneEvidence && typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
   if (elementalResists.some((value) => typeof value === "number") || typeof stats.chaosResistance === "number") {
-    basis.push(`Resistance foundation: ${cappedElemental}/3 elemental resistances capped; chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}. Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
+    basis.push(`Resistance foundation: ${cappedElemental}/3 elemental resistances capped; ${chaosImmuneEvidence ? "Chaos Inoculation makes chaos resistance irrelevant." : `chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}.`} Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
   }
+  if (chaosImmuneEvidence) basis.push("Chaos Inoculation is recognized: chaos damage and chaos resistance are excluded from the defensive penalty.");
 
   const pool = typeof stats.effectiveHealthPool === "number" && stats.effectiveHealthPool > 0
     ? stats.effectiveHealthPool
@@ -138,7 +142,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const poolScore = continuous(pool, [[4_000, 0.2], [8_000, 0.3], [15_000, 0.45], [30_000, 0.6], [60_000, 0.8], [100_000, 0.9], [150_000, 1]]);
   if (pool > 0) basis.push(`Effective survivability pool: ${pool.toLocaleString()} for ${round1(poolScore)}/1.0.`);
 
-  const defenceText = `${build.rawXml} ${build.sources.map((source) => `${source.name} ${source.detail}`).join(" ")}`.toLowerCase();
+  const defenceText = evidenceText;
   const enduranceEvidence = /endurance charge|endurance charges|physical damage reduction/.test(defenceText)
     || build.configFields.some((field) => /endurance/i.test(field.name) && /^(true|1|yes)$/i.test(field.value));
   const physicalConversionEvidence = /physical damage (?:from hits )?taken as (?:fire|cold|lightning|elemental)|physical damage converted to|phys(?:ical)? damage taken as/.test(defenceText);
@@ -165,7 +169,9 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   if (damageShiftEvidence) basis.push(`Damage shifting is recognized as an elemental mitigation layer${shiftBackstop ? "; the shifted-to-fire backstop is capped" : ""}.`);
   if (juggernautEvidence) basis.push("Juggernaut ascendancy evidence is recognized as additional mitigation and endurance-based reliability.");
 
-  const maxHit = [stats.physicalMaximumHit, stats.elementalMaximumHit, stats.chaosMaximumHit].filter((value): value is number => typeof value === "number" && value > 0).sort((a, b) => a - b);
+  const maxHit = [stats.physicalMaximumHit, stats.elementalMaximumHit, stats.chaosMaximumHit]
+    .filter((value, index): value is number => typeof value === "number" && value > 0 && (!chaosImmuneEvidence || index !== 2))
+    .sort((a, b) => a - b);
   let maxHitScore = 0;
   if (maxHit.length) {
     const median = maxHit[Math.floor((maxHit.length - 1) / 2)];
@@ -173,7 +179,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
       ? Math.max(...maxHit)
       : maxHit.length > 1 ? Math.max(median, median * 0.7 + maxHit.at(-1)! * 0.3) : median;
     maxHitScore = continuous(representative, [[3_000, 0.5], [8_000, 1], [15_000, 1.7], [30_000, 2.5], [60_000, 3.5], [100_000, 4.3], [200_000, 5]]);
-    basis.push(`Primary maximum-hit coverage: ${representative.toLocaleString()} across ${maxHit.length} exported damage types for ${round1(maxHitScore)}/5.0; weakest type ${maxHit[0].toLocaleString()}.`);
+    basis.push(`Primary maximum-hit coverage: ${representative.toLocaleString()} across ${maxHit.length} relevant exported damage types for ${round1(maxHitScore)}/5.0; weakest type ${maxHit[0].toLocaleString()}.${chaosImmuneEvidence ? " Chaos damage is excluded because the build is chaos-immune." : ""}`);
     if (maxHit.length > 1 && maxHit[0] < representative * 0.35) basis.push("One damage type is materially weaker, but it is shown as a coverage caveat rather than replacing the entire defence score.");
   }
 
