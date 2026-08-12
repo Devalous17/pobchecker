@@ -317,7 +317,7 @@ function figmaStatIcon(tone = "gold", label = "") {
 }
 
 function FigmaRows({ rows }: { rows: { label: string; value: string; tone?: string }[] }) {
-  return <div className="figma-rows">{rows.map((row) => <div className="figma-row" key={row.label}><span className={`figma-row-label tone-label-${row.tone ?? "gold"}`}><i aria-hidden="true">{figmaStatIcon(row.tone, row.label)}</i>{row.label}</span><strong className={`tone-text-${row.tone ?? "gold"}`}>{row.value}</strong></div>)}</div>;
+  return <div className="figma-rows">{rows.map((row) => <div className="figma-row" key={row.label}><span className={`figma-row-label tone-label-${row.tone ?? "gold"}`}><i className="figma-row-icon" aria-hidden="true">{figmaStatIcon(row.tone, row.label)}</i>{row.label}</span><strong className={`tone-text-${row.tone ?? "gold"}`}>{row.value}</strong></div>)}</div>;
 }
 
 function scenarioValue(result: ScenarioReport | null, key: keyof ScenarioReport) {
