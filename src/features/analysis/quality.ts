@@ -179,6 +179,11 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     + (damageShiftEvidence ? 0.45 : 0)
     + (juggernautEvidence ? 0.3 : 0);
   const mitigationScore = Math.min(1.5, Math.max(0, mitigationRaw));
+  const recoveryValues = [stats.lifeRegen, stats.energyShieldRegen, stats.lifeRecoveryRate, stats.energyShieldRecoveryRate, stats.lifeLeechRate, stats.energyShieldLeechRate, stats.lifeRecoup, stats.lifeOnHit, stats.lifeOnKill].filter(positive);
+  const strongestRecovery = recoveryValues.length ? Math.max(...recoveryValues) : 0;
+  const recoveryPenalty = strongestRecovery > 0 ? strongestRecovery < 100 ? 0.25 : 0 : 0.65;
+  if (!recoveryValues.length) basis.push("Recovery gap: no positive regeneration, leech, recoup, on-hit, or on-kill recovery value was exported; strong mitigation does not replace recovery over repeated hits.");
+  else if (recoveryPenalty > 0) basis.push(`Recovery is present but limited (${strongestRecovery.toLocaleString()} strongest exported value); a small sustained-hit penalty is applied.`);
   if ((stats.armour ?? 0) > 0 || (stats.evasion ?? 0) > 0 || (stats.block ?? 0) > 0 || (stats.spellBlock ?? 0) > 0 || (stats.spellSuppression ?? 0) > 0) {
     basis.push(`Layered mitigation and avoidance: ${[stats.armour ? `armour ${stats.armour.toLocaleString()}` : "", stats.evasion ? `evasion ${stats.evasion.toLocaleString()}` : "", stats.block ? `block ${stats.block}%` : "", stats.spellBlock ? `spell block ${stats.spellBlock}%` : "", stats.spellSuppression ? `suppression ${stats.spellSuppression}%` : "", enduranceEvidence ? "endurance/damage reduction evidence" : "", physicalConversionEvidence ? "physical damage taken as elemental evidence" : ""].filter(Boolean).join(", ")}; score ${round1(mitigationScore)}/1.5.`);
   }
@@ -204,7 +209,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const evidenceCount = [resistanceScore > 0, pool > 0, mitigationScore > 0, maxHit.length > 0].filter(Boolean).length;
   if (!evidenceCount) return rating(null, "Unknown", ["No resistance, survivability-pool, mitigation, or maximum-hit evidence was exported."]);
   const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
-  const score = Math.max(1, Math.min(10, resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus));
+  const score = Math.max(1, Math.min(10, resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty));
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
 }
 
