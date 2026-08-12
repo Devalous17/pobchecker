@@ -245,7 +245,7 @@ function FigmaChrome({ report, source, setSource, loading, onAnalyze, onReset, a
   return <>
     <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a><span className="site-credit">Made by Devalous</span></nav></div>
     <header className="mainbar figma-mainbar">
-      <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Reality Check home"><div className="brand-crest">P</div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
+      <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Reality Check home"><div className="brand-crest"><img src="/icons/path-of-exile-logo.png" alt="" /></div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
         {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
       </nav>
@@ -264,11 +264,30 @@ function FigmaScore({ label, rating, emphasis = "gold", icon }: { label: string;
   return <div className={`figma-score figma-score-${emphasis} ${label.toLowerCase().startsWith("overall") ? "figma-score-overall" : ""}`}><i className="figma-score-icon" aria-hidden="true">{icon}</i><span>{rating.grade}</span><strong>{rating.score === null ? "?" : rating.score.toFixed(1)}<small>/10</small></strong><em>{label}</em></div>;
 }
 
+function statIconAsset(label: string, tone = "") {
+  if (/configured pob dps/i.test(label)) return "/icons/configured-pob-dps.png";
+  if (/hit dps/i.test(label)) return "/icons/hit-dps.png";
+  if (/attack \/ cast speed/i.test(label)) return "/icons/attack-cast-speed.png";
+  if (/life/i.test(label)) return "/icons/life.png";
+  if (/energy shield|^es/i.test(label) || tone === "energy") return "/icons/energy-shield.png";
+  if (/mana/i.test(label)) return "/icons/mana.png";
+  if (/block/i.test(label)) return "/icons/block.png";
+  if (/guard/i.test(label)) return "/icons/guard-skills.png";
+  if (/fire/i.test(label)) return "/icons/fire-resistance.png";
+  if (/cold/i.test(label)) return "/icons/cold-resistance.png";
+  if (/lightning/i.test(label)) return "/icons/lightning-resistance.png";
+  if (/chaos/i.test(label)) return "/icons/chaos-resistance.png";
+  return null;
+}
+
 function FigmaStatTile({ label, value, tone = "gold", icon = "•", source }: { label: string; value: string; tone?: string; icon?: string; source?: string }) {
-  return <div className={`figma-stat-tile tone-${tone}`}><span className="figma-stat-icon">{icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div>;
+  const asset = statIconAsset(label, tone);
+  return <div className={`figma-stat-tile tone-${tone}`}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div>;
 }
 
 function figmaStatIcon(tone = "gold", label = "") {
+  const asset = statIconAsset(label, tone);
+  if (asset) return <img className="figma-row-icon-image" src={asset} alt="" />;
   if (tone === "fire" || /fire/i.test(label)) return "🔥";
   if (tone === "cold" || /cold/i.test(label)) return "❄";
   if (tone === "lightning" || /lightning/i.test(label)) return "⚡";
