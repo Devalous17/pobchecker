@@ -158,7 +158,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(evidenceText);
   const shiftPercentages = [...evidenceText.matchAll(/(\d+)%[^\n]{0,100}?(?:cold|lightning|fire|physical|elemental) damage[^\n]{0,80}?(?:taken as|shifted to)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
   const strongestShiftPercent = shiftPercentages.length ? Math.max(...shiftPercentages) : 0;
-  const shiftedElementalBackstop = damageShiftEvidence && fireResist >= 75 && cappedElemental >= 1;
+  const shiftedElementalBackstop = damageShiftEvidence && fireResist >= 75 && cappedElemental >= 1 && cappedElemental < 3;
   const shiftedResistanceCredit = shiftedElementalBackstop ? Math.min(1.5, (strongestShiftPercent / 50) * 1.5) : 0;
   const effectiveCappedElemental = Math.min(3, cappedElemental + shiftedResistanceCredit);
   const resistanceScore = effectiveCappedElemental + (!chaosImmuneEvidence && typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
@@ -210,11 +210,13 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     .filter((value, index): value is number => typeof value === "number" && value > 0 && (!chaosImmuneEvidence || index !== 2))
     .sort((a, b) => a - b);
   let maxHitScore = 0;
+  let representativeMaxHit = 0;
   if (maxHit.length) {
     const median = maxHit[Math.floor((maxHit.length - 1) / 2)];
     const representative = damageShiftEvidence && shiftBackstop
       ? Math.max(...maxHit)
       : maxHit.length > 1 ? Math.max(median, median * 0.7 + maxHit.at(-1)! * 0.3) : median;
+    representativeMaxHit = representative;
     maxHitScore = continuous(representative, [[3_000, 0.5], [8_000, 1], [15_000, 1.7], [30_000, 2.5], [60_000, 3.5], [100_000, 4.3], [200_000, 5]]);
     basis.push(`Primary maximum-hit coverage: ${representative.toLocaleString()} across ${maxHit.length} relevant exported damage types for ${round1(maxHitScore)}/5.0; weakest type ${maxHit[0].toLocaleString()}.${chaosImmuneEvidence ? " Chaos damage is excluded because the build is chaos-immune." : ""}`);
     if (maxHit.length > 1 && maxHit[0] < representative * 0.35) basis.push("One damage type is materially weaker, but it is shown as a coverage caveat rather than replacing the entire defence score.");
@@ -237,7 +239,13 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     physicalConversionEvidence || damageShiftEvidence,
   ].filter(Boolean).length;
   const recoveryCeiling = strongestRecovery >= 500 ? 10 : strongestRecovery >= 100 ? 9.6 : strongestRecovery > 0 ? 9.4 : 9.3;
-  const hitCeiling = maxHit.length && maxHitScore >= 4 ? 10 : 9.5;
+  const hitCeiling = representativeMaxHit >= 100_000 ? 10
+    : representativeMaxHit >= 60_000 ? 9.4
+    : representativeMaxHit >= 40_000 ? 8.8
+    : representativeMaxHit >= 25_000 ? 8.2
+    : representativeMaxHit >= 15_000 ? 7.6
+    : representativeMaxHit > 0 ? 7.1
+    : 6.5;
   const exceptionalTank = enduranceChargeCount >= 12
     && (stats.physicalDamageReduction ?? 0) >= 80
     && pool >= 100_000

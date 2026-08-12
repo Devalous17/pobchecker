@@ -54,6 +54,12 @@ describe("build quality rating", () => {
     expect(quality.defence.basis.some((item) => item.includes("Exceptional tank benchmark reached"))).toBe(true);
   });
 
+  it("does not let capped resistance and partial shifting hide low maximum hits", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="1000000"/><PlayerStat stat="TotalEHP" value="28574"/><PlayerStat stat="PhysicalDamageReduction" value="31"/><PlayerStat stat="EffectiveBlockChance" value="25"/><PlayerStat stat="EffectiveSpellBlockChance" value="35"/><PlayerStat stat="PhysicalMaximumHitTaken" value="9009"/><PlayerStat stat="FireMaximumHitTaken" value="15588"/><PlayerStat stat="ColdMaximumHitTaken" value="15588"/><PlayerStat stat="LightningMaximumHitTaken" value="29097"/><PlayerStat stat="ChaosMaximumHitTaken" value="7906"/><PlayerStat stat="FireResist" value="75"/><PlayerStat stat="ColdResist" value="75"/><PlayerStat stat="LightningResist" value="88"/><PlayerStat stat="ChaosResist" value="47"/><PlayerStat stat="LifeRegenRecovery" value="245.1"/><PlayerStat stat="LifeLeechGainRate" value="1464"/></Build><Items><Item>Lightning Coil</Item></Items></PathOfBuilding>`);
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.defence.score).toBeLessThanOrEqual(8.2);
+  });
+
   it("ignores an exported zero FullDPS when a positive TotalDPS exists", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="15000000"/><PlayerStat stat="TotalEHP" value="90000"/><PlayerStat stat="PhysicalMaximumHitTaken" value="20000"/></Build></PathOfBuilding>`);
     const quality = calculateBuildQuality(build, []);
