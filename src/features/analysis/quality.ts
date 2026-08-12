@@ -142,6 +142,10 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const enduranceEvidence = /endurance charge|endurance charges|physical damage reduction/.test(defenceText)
     || build.configFields.some((field) => /endurance/i.test(field.name) && /^(true|1|yes)$/i.test(field.value));
   const physicalConversionEvidence = /physical damage (?:from hits )?taken as (?:fire|cold|lightning|elemental)|physical damage converted to|phys(?:ical)? damage taken as/.test(defenceText);
+  const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(defenceText);
+  const juggernautEvidence = /juggernaut/.test(`${defenceText} ${build.identity.ascendancy ?? ""}`);
+  const fireResist = typeof stats.fireResistance === "number" ? stats.fireResistance : 0;
+  const shiftBackstop = damageShiftEvidence && fireResist >= 75;
 
   const mitigationRaw = continuous(Math.max(stats.armour ?? 0, stats.evasion ?? 0), [[2_000, 0.15], [5_000, 0.35], [15_000, 0.75], [30_000, 1.05], [60_000, 1.25]])
     + continuous(stats.block ?? 0, [[25, 0.08], [50, 0.15], [75, 0.2]])
@@ -149,19 +153,25 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     + continuous(stats.spellSuppression ?? 0, [[25, 0.08], [50, 0.14], [100, 0.2]])
     + continuous(Math.max(stats.lifeRegen ?? 0, stats.energyShieldRegen ?? 0, stats.lifeRecoveryRate ?? 0, stats.energyShieldRecoveryRate ?? 0, stats.lifeLeechRate ?? 0, stats.energyShieldLeechRate ?? 0, stats.lifeRecoup ?? 0), [[100, 0.06], [500, 0.15], [2_000, 0.25]])
     + (enduranceEvidence ? 0.25 : 0)
-    + (physicalConversionEvidence ? 0.3 : 0);
+    + (physicalConversionEvidence ? 0.3 : 0)
+    + (damageShiftEvidence ? 0.45 : 0)
+    + (juggernautEvidence ? 0.3 : 0);
   const mitigationScore = Math.min(1.5, Math.max(0, mitigationRaw));
   if ((stats.armour ?? 0) > 0 || (stats.evasion ?? 0) > 0 || (stats.block ?? 0) > 0 || (stats.spellBlock ?? 0) > 0 || (stats.spellSuppression ?? 0) > 0) {
     basis.push(`Layered mitigation and avoidance: ${[stats.armour ? `armour ${stats.armour.toLocaleString()}` : "", stats.evasion ? `evasion ${stats.evasion.toLocaleString()}` : "", stats.block ? `block ${stats.block}%` : "", stats.spellBlock ? `spell block ${stats.spellBlock}%` : "", stats.spellSuppression ? `suppression ${stats.spellSuppression}%` : "", enduranceEvidence ? "endurance/damage reduction evidence" : "", physicalConversionEvidence ? "physical damage taken as elemental evidence" : ""].filter(Boolean).join(", ")}; score ${round1(mitigationScore)}/1.5.`);
   }
   if (enduranceEvidence && !((stats.armour ?? 0) > 0 || (stats.evasion ?? 0) > 0 || (stats.block ?? 0) > 0 || (stats.spellBlock ?? 0) > 0 || (stats.spellSuppression ?? 0) > 0)) basis.push("Endurance/damage-reduction evidence contributes to the layered defence score.");
   if (physicalConversionEvidence) basis.push("Physical damage taken as elemental is recognized as an additional physical-hit mitigation layer.");
+  if (damageShiftEvidence) basis.push(`Damage shifting is recognized as an elemental mitigation layer${shiftBackstop ? "; the shifted-to-fire backstop is capped" : ""}.`);
+  if (juggernautEvidence) basis.push("Juggernaut ascendancy evidence is recognized as additional mitigation and endurance-based reliability.");
 
   const maxHit = [stats.physicalMaximumHit, stats.elementalMaximumHit, stats.chaosMaximumHit].filter((value): value is number => typeof value === "number" && value > 0).sort((a, b) => a - b);
   let maxHitScore = 0;
   if (maxHit.length) {
     const median = maxHit[Math.floor((maxHit.length - 1) / 2)];
-    const representative = maxHit.length > 1 ? Math.max(median, median * 0.7 + maxHit.at(-1)! * 0.3) : median;
+    const representative = damageShiftEvidence && shiftBackstop
+      ? Math.max(...maxHit)
+      : maxHit.length > 1 ? Math.max(median, median * 0.7 + maxHit.at(-1)! * 0.3) : median;
     maxHitScore = continuous(representative, [[3_000, 0.5], [8_000, 1], [15_000, 1.7], [30_000, 2.5], [60_000, 3.5], [100_000, 4.3], [200_000, 5]]);
     basis.push(`Primary maximum-hit coverage: ${representative.toLocaleString()} across ${maxHit.length} exported damage types for ${round1(maxHitScore)}/5.0; weakest type ${maxHit[0].toLocaleString()}.`);
     if (maxHit.length > 1 && maxHit[0] < representative * 0.35) basis.push("One damage type is materially weaker, but it is shown as a coverage caveat rather than replacing the entire defence score.");
@@ -169,7 +179,8 @@ function defenceScore(build: NormalizedBuild): QualityRating {
 
   const evidenceCount = [resistanceScore > 0, pool > 0, mitigationScore > 0, maxHit.length > 0].filter(Boolean).length;
   if (!evidenceCount) return rating(null, "Unknown", ["No resistance, survivability-pool, mitigation, or maximum-hit evidence was exported."]);
-  const score = Math.max(1, Math.min(10, resistanceScore + poolScore + mitigationScore + maxHitScore));
+  const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
+  const score = Math.max(1, Math.min(10, resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus));
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
 }
 
