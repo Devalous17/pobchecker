@@ -43,8 +43,9 @@ function offenceContext(build: CapabilityBuild & { importedStats?: RatingDpsStat
   const clearBonus = Math.min(4.2, mappingSignals * 0.85 + (dotEvidence ? 0.55 : 0));
   const offenceBonus = Math.min(1.25, mappingSignals * 0.22 + (dotEvidence ? 0.35 : 0));
   const dotDps = build.importedStats?.totalDotDps;
-  const dotScore = positive(dotDps) ? dotStrengthScore(dotDps) : null;
-  return { capabilities, dotEvidence, clearBonus, offenceBonus, dotScore, dotDps };
+  const directDps = [build.importedStats?.fullDps, build.importedStats?.combinedDps, build.importedStats?.totalDps].find(positive);
+  const dotScore = positive(dotDps) && !positive(directDps) ? dotStrengthScore(dotDps) : null;
+  return { capabilities, dotEvidence, clearBonus, offenceBonus, dotScore, dotDps, directDps };
 }
 
 const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -119,6 +120,7 @@ function offenceScore(build: NormalizedBuild, conditions: Condition[]): QualityR
   const basis = [`Imported ${basisLabel}: ${dps.toLocaleString()}.`];
   basis.unshift(`Raw output strength: ${round1(base)}/10 before reliability adjustments.`);
   basis.push(context.dotScore !== null ? `DoT calibration: ${context.dotDps!.toLocaleString()} DoT DPS maps to ${round1(context.dotScore)}/10 on a practical 36m ceiling.` : calibrationBasis, benchmarkBasis, `Peer score for ${capabilities.delivery}: ${round1(calibration.peerScore)}/10 across ${calibration.peerCount} builds.`);
+  if (context.dotScore === null && positive(context.dotDps) && positive(context.directDps)) basis.push(`Direct configured/hit DPS remains authoritative (${context.directDps.toLocaleString()}); DoT evidence is shown as supporting output rather than replacing it.`);
   if (unverified) basis.push(`${unverified} configured condition(s) are unverified; a ${round1(Math.min(1.5, unverified * 0.5))}-point reliability adjustment is applied until the source is confirmed.`);
   if (mappingOnly) basis.push(`${mappingOnly} condition(s) are mapping-only; a ${round1(Math.min(0.5, mappingOnly * 0.25))}-point encounter adjustment is applied.`);
   if (context.dotEvidence) basis.push("Damage-over-time output is recognized as a first-class offence archetype alongside hit DPS.");
