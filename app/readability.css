@@ -36,8 +36,8 @@
 .figma-score-icon img { width:100%; height:100%; object-fit:contain; border-radius:50%; }
 .figma-row-label .figma-row-icon { width:56px !important; height:56px !important; min-width:56px; flex:0 0 56px; overflow:hidden; display:inline-grid; place-items:center; border:1px solid currentColor; border-radius:50%; background:#0b1215; box-shadow:0 0 10px color-mix(in srgb, currentColor 28%, transparent); }
 .figma-row-label .figma-row-icon .figma-row-icon-image { width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
-.brand-crest { overflow:hidden; padding:4px; }
-.brand-crest img { width:150%; height:150%; margin:-25%; object-fit:cover; object-position:center; display:block; }
+.brand-crest { overflow:visible; padding:0; border:0; background:transparent; box-shadow:none; transform:none; width:52px; height:52px; }
+.brand-crest img { width:100%; height:100%; margin:0; object-fit:contain; object-position:center; display:block; }
 .figma-defence-notice::before { content:""; display:block; float:left; width:42px; height:42px; margin:0 10px 4px 0; background:url("/icons/guard-skills.png") center/contain no-repeat; }
 .figma-stat-tile em,
 .figma-capability-rail small,

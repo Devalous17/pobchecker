@@ -247,7 +247,7 @@ function FigmaChrome({ report, source, setSource, loading, onAnalyze, onReset, a
   return <>
     <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a><span className="site-credit">Made by Devalous</span></nav></div>
     <header className="mainbar figma-mainbar">
-      <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Reality Check home"><div className="brand-crest"><img src="/icons/path-of-exile-logo.png" alt="" /></div><div><div className="brand-name">PoB Reality Check</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
+      <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Rating Checker home"><div className="brand-crest"><img src="/icons/path-of-exile-logo.png" alt="Path of Exile" /></div><div><div className="brand-name">PoB Rating Checker</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
         {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
       </nav>
@@ -519,7 +519,7 @@ function FigmaQualityOverview({ report, scenarioResult = null, onCalculate }: { 
       <div className="figma-quality-copy">
         <span className="figma-verdict-kicker">THE REALITY CHECK</span>
         <h1>How good is this build in reality?</h1>
-        <p>Path of Building shows a configured snapshot. PoB Reality Check separates that ceiling from the damage and defence your build can support during an actual encounter.</p>
+        <p>Path of Building shows a configured snapshot. PoB Rating Checker separates that ceiling from the damage and defence your build can support during an actual encounter.</p>
         <div className="figma-verdict-line"><span>THIS REPORT MEASURES</span><strong>Power - reliability - survivability</strong></div>
         <ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
       </div>
