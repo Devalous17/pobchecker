@@ -156,11 +156,14 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     || ((stats.life ?? 0) <= 1 && (stats.energyShield ?? 0) > 0);
   const fireResist = typeof stats.fireResistance === "number" ? stats.fireResistance : 0;
   const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(evidenceText);
+  const shiftPercentages = [...evidenceText.matchAll(/(\d+)%[^\n]{0,100}?(?:cold|lightning|fire|physical|elemental) damage[^\n]{0,80}?(?:taken as|shifted to)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
+  const strongestShiftPercent = shiftPercentages.length ? Math.max(...shiftPercentages) : 0;
   const shiftedElementalBackstop = damageShiftEvidence && fireResist >= 75 && cappedElemental >= 1;
-  const effectiveCappedElemental = shiftedElementalBackstop ? 3 : cappedElemental;
+  const shiftedResistanceCredit = shiftedElementalBackstop ? Math.min(1.5, (strongestShiftPercent / 50) * 1.5) : 0;
+  const effectiveCappedElemental = Math.min(3, cappedElemental + shiftedResistanceCredit);
   const resistanceScore = effectiveCappedElemental + (!chaosImmuneEvidence && typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
   if (elementalResists.some((value) => typeof value === "number") || typeof stats.chaosResistance === "number") {
-    basis.push(`Resistance foundation: ${shiftedElementalBackstop ? "damage-shifted elemental coverage uses the capped fire backstop" : `${cappedElemental}/3 elemental resistances capped`}; ${chaosImmuneEvidence ? "Chaos Inoculation makes chaos resistance irrelevant." : `chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}.`} Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
+    basis.push(`Resistance foundation: ${shiftedElementalBackstop ? `damage-shifted elemental coverage receives proportional capped-fire credit (${strongestShiftPercent || "partial"}% shift)` : `${cappedElemental}/3 elemental resistances capped`}; ${chaosImmuneEvidence ? "Chaos Inoculation makes chaos resistance irrelevant." : `chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}.`} Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
   }
   if (chaosImmuneEvidence) basis.push("Chaos Inoculation is recognized: chaos damage and chaos resistance are excluded from the defensive penalty.");
 
@@ -240,7 +243,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     && pool >= 100_000
     && maxHitScore >= 4
     && strongestRecovery >= 500
-    && effectiveCappedElemental >= 3;
+    && (effectiveCappedElemental >= 3 || shiftedElementalBackstop);
   const layeredCeiling = exceptionalTank || (layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500)) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
   const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, layeredCeiling, 10));
   basis.push(`Defensive layers counted: ${layeredDefenceCount}/9 (resistance, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion).`);
