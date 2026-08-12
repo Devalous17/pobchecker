@@ -321,9 +321,11 @@ function numericStat(stats: Stats, key: string) {
 }
 
 function DefenceLayerTarget({ label, current, target, suffix = "", note }: { label: string; current: number | null; target?: number; suffix?: string; note: string }) {
-  const met = target !== undefined && current !== null && current >= target;
-  const informational = target === undefined;
-  return <div className={`figma-defence-layer-card ${informational ? "is-informational" : met ? "is-met" : "is-neutral"}`}><div><strong>{label}</strong><span>{current === null ? "Not exported" : `${compactNumber(current)}${suffix}`}</span></div>{!informational && <small>Recommended minimum: {compactNumber(target)}{suffix}</small>}<p>{informational ? (current === null ? "No imported value was found." : "Useful when this recovery layer is part of the build; no universal minimum is applied.") : met ? "Recommended minimum reached." : current === null ? "No imported value was found." : `Below the recommended minimum by about ${compactNumber(target - current)}${suffix}.`}</p><em>{note}</em></div>;
+  const benchmark = label === "Spell suppression" ? 50 : target;
+  const met = benchmark !== undefined && current !== null && current >= benchmark;
+  const informational = benchmark === undefined;
+  const displayNote = label === "Spell suppression" ? "At least 50% is a useful starting point; 100% is stronger." : note;
+  return <div className={`figma-defence-layer-card ${informational ? "is-informational" : met ? "is-met" : "is-neutral"}`}><div><strong>{label}</strong><span>{current === null ? "Not exported" : `${compactNumber(current)}${suffix}`}</span></div>{!informational && <small>Recommended minimum: {compactNumber(benchmark)}{suffix}</small>}<p>{informational ? (current === null ? "No imported value was found." : "Useful when this recovery layer is part of the build; no universal minimum is applied.") : met ? "Recommended minimum reached." : current === null ? "No imported value was found." : `Below the recommended minimum by about ${compactNumber(benchmark - current)}${suffix}.`}</p><em>{displayNote}</em></div>;
 }
 
 function DefenceLayerTargets({ stats }: { stats: Stats }) {
@@ -333,8 +335,10 @@ function DefenceLayerTargets({ stats }: { stats: Stats }) {
 let activeDefenceStats: Stats | undefined;
 
 function TargetMetric({ label, current, target, suffix = "", note, targetKind = "Starting target", stats }: { label: string; current: number | null; target: number; suffix?: string; note: string; targetKind?: string; stats?: Stats }) {
-  const gap = current === null ? null : Math.max(0, target - current);
-  const metric = <div className={`figma-target-metric ${current !== null && current >= target ? "is-met" : "is-gap"}`}><div><strong>{label}</strong><span>{current === null ? "Unavailable" : `${compactNumber(current)}${suffix}`}</span></div><small>{targetKind}: {compactNumber(target)}{suffix}</small><p>{current === null ? "This value was not exported by PoB." : gap !== null && gap > 0 ? `Improve by about ${compactNumber(gap)}${suffix} to reach this benchmark.` : "Benchmark reached in the imported snapshot."}</p><em>{note}</em></div>;
+  const benchmark = label === "Spell suppression" ? 50 : target;
+  const gap = current === null ? null : Math.max(0, benchmark - current);
+  const displayNote = label === "Spell suppression" ? "At least 50% is a useful starting point; 100% is stronger." : note;
+  const metric = <div className={`figma-target-metric ${current !== null && current >= benchmark ? "is-met" : "is-gap"}`}><div><strong>{label}</strong><span>{current === null ? "Unavailable" : `${compactNumber(current)}${suffix}`}</span></div><small>{targetKind}: {compactNumber(benchmark)}{suffix}</small><p>{current === null ? "This value was not exported by PoB." : gap !== null && gap > 0 ? `Improve by about ${compactNumber(gap)}${suffix} to reach this benchmark.` : "Benchmark reached in the imported snapshot."}</p><em>{displayNote}</em></div>;
   return label === "Spell suppression" ? <>{metric}<DefenceLayerTargets stats={stats ?? activeDefenceStats ?? { spellSuppression: current ?? undefined }} /></> : metric;
 }
 
