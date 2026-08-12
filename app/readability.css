@@ -101,18 +101,36 @@
 .figma-loadout-panel .skill-setup-header small,
 .figma-loadout-panel .skill-setup .gem-row small { color:#b6ccca !important; }
 
-/* Give the shorter offence panel a useful, honest explanation instead of dead space. */
-.figma-two-column>.figma-summary-panel:first-child::after {
-  content: "Damage shown here is imported directly from the selected PoB setup. Open Offence for the main skill, six-link evidence, and conditional effects that can change real uptime.";
-  display:block;
-  margin-top:24px;
-  padding:14px 16px;
-  border:1px solid #3f6872;
-  border-radius:9px;
-  background:rgba(15, 35, 42, .78);
-  color:#d7e4e0;
-  font-size:13px;
-  line-height:1.55;
+/* The summary is information, not a hover target: remove the diagonal sheen and lift. */
+.figma-two-column>.figma-summary-panel:hover,
+.figma-two-column>.figma-summary-panel:first-child:hover {
+  transform: none !important;
+  border-color: var(--ui-line) !important;
+  box-shadow: inset 0 0 0 1px rgba(197,219,222,.035), 0 12px 32px rgba(0,0,0,.28) !important;
+}
+.figma-two-column>.figma-summary-panel:first-child::before,
+.figma-two-column>.figma-summary-panel:first-child::after { display:none !important; }
+
+/* Make each report tab visibly arrive when activeTab changes. */
+.figma-workbench > .figma-frame,
+.figma-workbench > .figma-reset-link {
+  animation: report-panel-enter .5s cubic-bezier(.16,1,.3,1) both;
+}
+.figma-workbench > .figma-frame:nth-child(2) { animation-delay: .06s; }
+.figma-workbench > .figma-frame:nth-child(3) { animation-delay: .12s; }
+.figma-workbench > .figma-frame:nth-child(4) { animation-delay: .18s; }
+.figma-workbench > .figma-frame:nth-child(5) { animation-delay: .24s; }
+@keyframes report-panel-enter {
+  from { opacity: 0; transform: translateY(18px) scale(.985); filter: blur(3px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.figma-defence-layer-card.is-informational { border-color:#697477; background:#292e30; }
+.figma-defence-layer-card.is-informational strong,
+.figma-defence-layer-card.is-informational span { color:#c8d2d0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .figma-workbench > .figma-frame,
+  .figma-workbench > .figma-reset-link { animation:none; }
 }
 
 .site-footer a { color:#8fc5cf; font-size:11px; text-decoration:none; }
