@@ -154,9 +154,13 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const evidenceText = `${build.rawXml} ${build.sources.map((source) => `${source.name} ${source.detail}`).join(" ")} ${build.passiveNodes.map((node) => node.name).join(" ")}`.toLowerCase();
   const chaosImmuneEvidence = /chaos inoculation|chaos inoculation keystone|\bci keystone\b/.test(evidenceText)
     || ((stats.life ?? 0) <= 1 && (stats.energyShield ?? 0) > 0);
-  const resistanceScore = cappedElemental + (!chaosImmuneEvidence && typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
+  const fireResist = typeof stats.fireResistance === "number" ? stats.fireResistance : 0;
+  const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(evidenceText);
+  const shiftedElementalBackstop = damageShiftEvidence && fireResist >= 75 && cappedElemental >= 1;
+  const effectiveCappedElemental = shiftedElementalBackstop ? 3 : cappedElemental;
+  const resistanceScore = effectiveCappedElemental + (!chaosImmuneEvidence && typeof stats.chaosResistance === "number" && stats.chaosResistance >= 0 ? 0.5 : 0);
   if (elementalResists.some((value) => typeof value === "number") || typeof stats.chaosResistance === "number") {
-    basis.push(`Resistance foundation: ${cappedElemental}/3 elemental resistances capped; ${chaosImmuneEvidence ? "Chaos Inoculation makes chaos resistance irrelevant." : `chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}.`} Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
+    basis.push(`Resistance foundation: ${shiftedElementalBackstop ? "damage-shifted elemental coverage uses the capped fire backstop" : `${cappedElemental}/3 elemental resistances capped`}; ${chaosImmuneEvidence ? "Chaos Inoculation makes chaos resistance irrelevant." : `chaos resistance ${typeof stats.chaosResistance === "number" ? `${stats.chaosResistance}%` : "unknown"}.`} Score ${round1(Math.min(3.5, resistanceScore))}/3.5.`);
   }
   if (chaosImmuneEvidence) basis.push("Chaos Inoculation is recognized: chaos damage and chaos resistance are excluded from the defensive penalty.");
 
@@ -172,10 +176,8 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const enduranceChargeMatches = [...defenceText.matchAll(/(\d+)\s*(?:maximum\s*)?endurance charges?/g)].map((match) => Number(match[1])).filter(Number.isFinite);
   const enduranceChargeCount = Math.max(stats.enduranceCharges ?? 0, ...enduranceChargeMatches, 0);
   const physicalConversionEvidence = /physical damage (?:from hits )?taken as (?:fire|cold|lightning|elemental)|physical damage converted to|phys(?:ical)? damage taken as/.test(defenceText);
-  const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(defenceText);
   const juggernautEvidence = /juggernaut/.test(`${defenceText} ${build.identity.ascendancy ?? ""}`);
-  const fireResist = typeof stats.fireResistance === "number" ? stats.fireResistance : 0;
-  const shiftBackstop = damageShiftEvidence && fireResist >= 75;
+  const shiftBackstop = shiftedElementalBackstop;
 
   const mitigationRaw = continuous(Math.max(stats.armour ?? 0, stats.evasion ?? 0), [[2_000, 0.15], [5_000, 0.35], [15_000, 0.75], [30_000, 1.05], [60_000, 1.25]])
     + continuous(stats.block ?? 0, [[25, 0.08], [50, 0.15], [75, 0.2]])
@@ -220,7 +222,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
   const rawScore = resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty;
   const layeredDefenceCount = [
-    cappedElemental >= 3,
+    effectiveCappedElemental >= 3,
     pool >= 100_000,
     maxHitScore >= 4,
     strongestRecovery >= 500,
@@ -238,7 +240,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     && pool >= 100_000
     && maxHitScore >= 4
     && strongestRecovery >= 500
-    && cappedElemental >= 3;
+    && effectiveCappedElemental >= 3;
   const layeredCeiling = exceptionalTank || (layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500)) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
   const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, layeredCeiling, 10));
   basis.push(`Defensive layers counted: ${layeredDefenceCount}/9 (resistance, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion).`);
