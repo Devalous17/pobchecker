@@ -137,11 +137,6 @@
 .figma-defence-layer-card.is-informational strong,
 .figma-defence-layer-card.is-informational span { color:#c8d2d0; }
 
-@media (prefers-reduced-motion: reduce) {
-  .figma-workbench > .figma-frame,
-  .figma-workbench > .figma-reset-link { animation:none; }
-}
-
 .site-footer a { color:#8fc5cf; font-size:11px; text-decoration:none; }
 .site-footer a:hover { color:#f1c76c; text-decoration:underline; }
 
