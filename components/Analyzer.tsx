@@ -277,6 +277,7 @@ function statIconAsset(label: string, tone = "") {
   if (/effective hit pool/i.test(label)) return "/icons/effective-hit-pool.png";
   if (/evasion/i.test(label)) return "/icons/evasion.png";
   if (/spell suppression/i.test(label)) return "/icons/spell-suppression.png";
+  if (/physical maximum hit/i.test(label)) return "/icons/physical-max-hit.png";
   if (/life/i.test(label)) return "/icons/life.png";
   if (/energy shield|^es/i.test(label) || tone === "energy") return "/icons/energy-shield.png";
   if (/mana/i.test(label)) return "/icons/mana.png";
@@ -293,8 +294,9 @@ let activeImportedStats: Record<string, unknown> | null = null;
 
 function FigmaStatTile({ label, value, tone = "gold", icon = "•", source }: { label: string; value: string; tone?: string; icon?: string; source?: string }) {
   const asset = statIconAsset(label, tone);
-  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedCritMultiplier(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /></> : null;
-  return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div></>;
+  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedCritMultiplier(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Damage-over-Time DPS" value={importedDps(activeImportedStats.totalDotDps)} tone="damage" icon="◈" source="Imported DoT output" /></> : null;
+  const detail = /configured pob dps/i.test(label) ? "This value only appears when the intended damage skill or setup is checked Include in Full DPS in Path of Building." : undefined;
+  return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`} title={detail}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}{detail && <span className="figma-stat-help">ⓘ Include in Full DPS</span>}</div></>;
 }
 
 function figmaStatIcon(tone = "gold", label = "") {

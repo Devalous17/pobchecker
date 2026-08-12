@@ -31,8 +31,19 @@ function calibratedDpsStrengthScore(dps: number, delivery: ReturnType<typeof inf
   return { score: Math.max(1, Math.min(10, absoluteScore * 0.88 + peer.score * 0.12)), absoluteScore, peerScore: peer.score, peerCount: peer.profile.count };
 }
 
-const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 type RatingDpsStats = { fullDps?: number; combinedDps?: number; totalDotDps?: number; totalDps?: number; speed?: number };
+
+function offenceContext(build: CapabilityBuild & { importedStats?: RatingDpsStats }) {
+  const capabilities = inferSkillCapabilities(build);
+  const coverage = capabilities.coverageSignals;
+  const dotEvidence = coverage.some((signal) => /damage-over-time/i.test(signal)) || positive(build.importedStats?.totalDotDps);
+  const mappingSignals = coverage.filter((signal) => /coverage|spread|multiple-source/i.test(signal)).length;
+  const clearBonus = Math.min(4.2, mappingSignals * 0.85 + (dotEvidence ? 0.55 : 0));
+  const offenceBonus = Math.min(1.25, mappingSignals * 0.22 + (dotEvidence ? 0.35 : 0));
+  return { capabilities, dotEvidence, clearBonus, offenceBonus };
+}
+
+const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 
 export function importedRatingDps(build: { importedStats: RatingDpsStats }): RatingDpsEvidence {
   const candidates: Array<[string, unknown]> = [
@@ -49,9 +60,10 @@ export function importedRatingDps(build: { importedStats: RatingDpsStats }): Rat
 
 export function scenarioOffenceRating(dps: number | null | undefined, build: CapabilityBuild, conditions: Array<{ reliability: string }>): QualityRating {
   if (typeof dps !== "number" || !Number.isFinite(dps) || dps <= 0) return rating(null, "Unknown", ["The worker did not return a positive corrected damage value."]);
-  const capabilities = inferSkillCapabilities(build);
+  const context = offenceContext(build);
+  const capabilities = context.capabilities;
   const calibration = calibratedDpsStrengthScore(dps, capabilities.delivery);
-  const base = calibration.score;
+  const base = Math.min(10, calibration.score * 0.9 + context.offenceBonus);
   const unverified = conditions.filter((condition) => condition.reliability === "Unverified").length;
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const conditional = conditions.filter((condition) => ["Conditional", "Temporary", "Situational", "Ramp-dependent"].includes(condition.reliability)).length;
@@ -62,23 +74,26 @@ export function scenarioOffenceRating(dps: number | null | undefined, build: Cap
   if (unverified) basis.push(`${unverified} unverified condition(s) remain visible and lower confidence until a source is confirmed.`);
   if (mappingOnly) basis.push(`${mappingOnly} mapping-only condition(s) remain visible and are not treated as universal boss evidence.`);
   if (specialDelivery) basis.push("Non-direct delivery is lower-confidence because uptime, placement, AI, and deployment time are not fully modeled; the imported DPS strength is not reduced for that reason.");
+  if (context.dotEvidence) basis.push("Damage-over-time evidence is included as an offence archetype; the report does not require all offence to be direct hit DPS.");
+  if (context.clearBonus > 0) basis.push(`Mapping and coverage evidence contributes ${round1(context.clearBonus)} points to the context-aware offence view: ${capabilities.coverageSignals.join(", ")}.`);
   basis.push("This is a corrected scenario rating, not a promise of sustained gameplay or a league percentile.");
   return rating(base, confidence, basis);
 }
 
 export function buildOverviewRatings(build: CapabilityBuild & { importedStats: RatingDpsStats }, offence: QualityRating, defence: QualityRating, conditions: Array<{ reliability: string }>, rawDps?: number | null): OverviewRatings {
-  const capabilities = inferSkillCapabilities(build);
+  const context = offenceContext(build);
+  const capabilities = context.capabilities;
   const coverageEvidence = capabilities.coverageSignals.length > 0;
   const speed = typeof build.importedStats.speed === "number" && Number.isFinite(build.importedStats.speed) ? build.importedStats.speed : 0;
   const speedScore = speed > 8 ? 9 : speed > 5 ? 8 : speed > 3 ? 7 : speed > 1.5 ? 6 : 5;
   const rawDpsScore = typeof rawDps === "number" && Number.isFinite(rawDps) && rawDps > 0 ? calibratedDpsStrengthScore(rawDps, capabilities.delivery).score : offence.score ?? 5;
-  const clearScore = Math.max(1, Math.min(10, rawDpsScore * 0.75 + speedScore * 0.1 + (coverageEvidence ? 1.5 : 0.5)));
+  const clearScore = Math.max(1, Math.min(10, rawDpsScore * 0.45 + speedScore * 0.15 + context.clearBonus + (coverageEvidence ? 1 : 0.4)));
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const bossingScore = Math.max(1, Math.min(10, rawDpsScore - Math.min(0.35, mappingOnly * 0.1)));
   const confidence = offence.confidence === "Low" ? "Low" : "Medium";
   return {
     dps: rating(rawDpsScore, confidence, [`Authoritative single-target PoB DPS strength: ${rawDps && rawDps > 0 ? rawDps.toLocaleString() : "Unavailable"}.`, calibrationBasis, benchmarkBasis, "Conditions affect confidence and assumptions, not raw DPS strength."]),
-    clear: rating(clearScore, coverageEvidence ? "Medium" : "Low", [`Estimated clear score: ${round1(clearScore)}/10.`, coverageEvidence ? capabilities.evidence[2] : "No direct area-clear evidence was exported; the estimate leans on single-target DPS and speed.", "Clear speed is an estimate from PoB evidence, not a simulated map run."]),
+    clear: rating(clearScore, coverageEvidence ? "Medium" : "Low", [`Context-aware estimated clear score: ${round1(clearScore)}/10.`, coverageEvidence ? capabilities.evidence[2] : "No direct area-clear evidence was exported; the estimate leans on single-target DPS and speed.", context.dotEvidence ? "Damage-over-time spread is treated as a mapping archetype rather than discarded as missing hit DPS." : "Clear speed is an estimate from PoB evidence, not a simulated map run."]),
     defence: { ...defence, basis: [...defence.basis, "Defence uses imported PoB hit-pool and maximum-hit evidence."] },
     bossing: rating(bossingScore, confidence, [`Authoritative single-target bossing strength: ${round1(bossingScore)}/10 from ${rawDps && rawDps > 0 ? rawDps.toLocaleString() : "the available PoB DPS"}.`, `Delivery model: ${capabilities.delivery}. ${capabilities.singleTargetSignals.join(" · ")}`, "Conditions affect confidence and assumptions rather than raw damage strength.", "This does not simulate boss mechanics or movement downtime."]),
   };
@@ -88,9 +103,10 @@ function offenceScore(build: NormalizedBuild, conditions: Condition[]): QualityR
   const dpsEvidence = importedRatingDps(build);
   const dps = dpsEvidence.value;
   if (dps === null || !Number.isFinite(dps)) return rating(null, "Unknown", ["No PoB DPS value was exported."]);
-  const capabilities = inferSkillCapabilities(build);
+  const context = offenceContext(build);
+  const capabilities = context.capabilities;
   const calibration = calibratedDpsStrengthScore(dps, capabilities.delivery);
-  const base = calibration.score;
+  const base = Math.min(10, calibration.score * 0.9 + context.offenceBonus);
   const unverified = conditions.filter((condition) => condition.reliability === "Unverified").length;
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const reliabilityPenalty = Math.min(1.5, unverified * 0.5) + Math.min(0.5, mappingOnly * 0.25);
@@ -101,6 +117,8 @@ function offenceScore(build: NormalizedBuild, conditions: Condition[]): QualityR
   basis.push(calibrationBasis, benchmarkBasis, `Peer score for ${capabilities.delivery}: ${round1(calibration.peerScore)}/10 across ${calibration.peerCount} builds.`);
   if (unverified) basis.push(`${unverified} configured condition(s) are unverified; a ${round1(Math.min(1.5, unverified * 0.5))}-point reliability adjustment is applied until the source is confirmed.`);
   if (mappingOnly) basis.push(`${mappingOnly} condition(s) are mapping-only; a ${round1(Math.min(0.5, mappingOnly * 0.25))}-point encounter adjustment is applied.`);
+  if (context.dotEvidence) basis.push("Damage-over-time output is recognized as a first-class offence archetype alongside hit DPS.");
+  if (context.clearBonus > 0) basis.push(`Coverage and mapping context contributes ${round1(context.clearBonus)} points outside raw DPS inflation.`);
   basis.push("This is an absolute screening curve, not a league-wide percentile; population ranking requires calibrated league-, skill-, and content-aware data.");
   return rating(score, "Medium", basis);
 }
