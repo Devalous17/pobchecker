@@ -167,6 +167,8 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const defenceText = evidenceText;
   const enduranceEvidence = /endurance charge|endurance charges|physical damage reduction/.test(defenceText)
     || build.configFields.some((field) => /endurance/i.test(field.name) && /^(true|1|yes)$/i.test(field.value));
+  const enduranceChargeMatches = [...defenceText.matchAll(/(\d+)\s*(?:maximum\s*)?endurance charges?/g)].map((match) => Number(match[1])).filter(Number.isFinite);
+  const enduranceChargeCount = Math.max(stats.enduranceCharges ?? 0, ...enduranceChargeMatches, 0);
   const physicalConversionEvidence = /physical damage (?:from hits )?taken as (?:fire|cold|lightning|elemental)|physical damage converted to|phys(?:ical)? damage taken as/.test(defenceText);
   const damageShiftEvidence = /(?:cold|lightning|fire|physical|elemental) damage (?:taken as|shifted to)|damage taken as (?:fire|cold|lightning|physical|elemental)|taken as fire damage|taken as cold damage|taken as lightning damage/.test(defenceText);
   const juggernautEvidence = /juggernaut/.test(`${defenceText} ${build.identity.ascendancy ?? ""}`);
@@ -195,6 +197,7 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   if (physicalConversionEvidence) basis.push("Physical damage taken as elemental is recognized as an additional physical-hit mitigation layer.");
   if (damageShiftEvidence) basis.push(`Damage shifting is recognized as an elemental mitigation layer${shiftBackstop ? "; the shifted-to-fire backstop is capped" : ""}.`);
   if (juggernautEvidence) basis.push("Juggernaut ascendancy evidence is recognized as additional mitigation and endurance-based reliability.");
+  if (enduranceChargeCount >= 8) basis.push(`Exceptional endurance-charge layer detected: ${enduranceChargeCount} charges materially strengthen physical mitigation and sustained defence.`);
 
   const maxHit = [stats.physicalMaximumHit, stats.elementalMaximumHit, stats.chaosMaximumHit]
     .filter((value, index): value is number => typeof value === "number" && value > 0 && (!chaosImmuneEvidence || index !== 2))
@@ -214,9 +217,22 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   if (!evidenceCount) return rating(null, "Unknown", ["No resistance, survivability-pool, mitigation, or maximum-hit evidence was exported."]);
   const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
   const rawScore = resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty;
+  const layeredDefenceCount = [
+    cappedElemental >= 3,
+    pool >= 100_000,
+    maxHitScore >= 4,
+    strongestRecovery >= 500,
+    (stats.block ?? 0) >= 75 || (stats.spellBlock ?? 0) >= 75,
+    (stats.spellSuppression ?? 0) >= 100,
+    (stats.armour ?? 0) >= 30_000 || (stats.evasion ?? 0) >= 30_000,
+    enduranceChargeCount >= 8,
+    physicalConversionEvidence || damageShiftEvidence,
+  ].filter(Boolean).length;
   const recoveryCeiling = strongestRecovery >= 500 ? 10 : strongestRecovery >= 100 ? 9.6 : strongestRecovery > 0 ? 9.4 : 9.3;
   const hitCeiling = maxHit.length && maxHitScore >= 4 ? 10 : 9.5;
-  const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, 10));
+  const layeredCeiling = layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
+  const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, layeredCeiling, 10));
+  basis.push(`Defensive layers counted: ${layeredDefenceCount}/9 (resistance, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion).`);
   if (score < rawScore) basis.push(`Defence quality ceiling: ${round1(score)}/10 because maximum-hit and avoidance strength cannot represent sustained survival without stronger recovery and hit coverage.`);
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
 }

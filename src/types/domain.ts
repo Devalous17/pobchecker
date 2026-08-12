@@ -98,6 +98,7 @@ export interface ImportedStats {
   manaOnKill?: number;
   energyShieldOnHit?: number;
   energyShieldOnKill?: number;
+  enduranceCharges?: number;
 }
 export interface QualityRating { score: number | null; grade: QualityGrade | "?"; label: string; confidence: Confidence; basis: string[]; }
 export interface RatingDpsEvidence { value: number | null; label: string; origin: "imported" | "worker-typical" | "worker-configured" | "unavailable"; explanation: string; importedValue?: number; differencePercent: number; verification: "not-run" | "matched" | "mismatch"; }
