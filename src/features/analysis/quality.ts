@@ -228,13 +228,21 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     (stats.spellSuppression ?? 0) >= 100,
     (stats.armour ?? 0) >= 30_000 || (stats.evasion ?? 0) >= 30_000,
     enduranceChargeCount >= 8,
+    (stats.physicalDamageReduction ?? 0) >= 80,
     physicalConversionEvidence || damageShiftEvidence,
   ].filter(Boolean).length;
   const recoveryCeiling = strongestRecovery >= 500 ? 10 : strongestRecovery >= 100 ? 9.6 : strongestRecovery > 0 ? 9.4 : 9.3;
   const hitCeiling = maxHit.length && maxHitScore >= 4 ? 10 : 9.5;
-  const layeredCeiling = layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
+  const exceptionalTank = enduranceChargeCount >= 12
+    && (stats.physicalDamageReduction ?? 0) >= 80
+    && pool >= 100_000
+    && maxHitScore >= 4
+    && strongestRecovery >= 500
+    && cappedElemental >= 3;
+  const layeredCeiling = exceptionalTank || (layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500)) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
   const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, layeredCeiling, 10));
   basis.push(`Defensive layers counted: ${layeredDefenceCount}/9 (resistance, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion).`);
+  if (exceptionalTank) basis.push(`Exceptional tank benchmark reached: ${enduranceChargeCount} endurance charges, ${stats.physicalDamageReduction}% physical damage reduction, high maximum-hit coverage, EHP, capped elemental resistance, and strong recovery.`);
   if (score < rawScore) basis.push(`Defence quality ceiling: ${round1(score)}/10 because maximum-hit and avoidance strength cannot represent sustained survival without stronger recovery and hit coverage.`);
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
 }

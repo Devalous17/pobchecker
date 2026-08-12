@@ -222,6 +222,7 @@ export function parsePobXml(xml: string): NormalizedBuild {
     energyShieldOnHit: stat("EnergyShieldOnHit"),
     energyShieldOnKill: stat("EnergyShieldOnKill"),
     enduranceCharges: stat("EnduranceCharges", "MaximumEnduranceCharges", "EnduranceChargeCount"),
+    physicalDamageReduction: stat("PhysicalDamageReduction", "PhysicalDamageReductionPercent"),
   };
   const identityName = String(build?.["@_name"] ?? "").trim() || mainSkill || "Unnamed build";
   return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, damageChannels, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };

@@ -47,6 +47,13 @@ describe("build quality rating", () => {
     expect(quality.defence.basis.some((item) => item.includes("weakest type"))).toBe(true);
   });
 
+  it("recognizes an exceptional endurance-charge tank as the 10/10 benchmark", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build ascendClassName="Juggernaut"><PlayerStat stat="FullDPS" value="1000000"/><PlayerStat stat="TotalEHP" value="117175"/><PlayerStat stat="PhysicalDamageReduction" value="90"/><PlayerStat stat="EnduranceCharges" value="18"/><PlayerStat stat="PhysicalMaximumHitTaken" value="66762"/><PlayerStat stat="FireMaximumHitTaken" value="247269"/><PlayerStat stat="ColdMaximumHitTaken" value="238438"/><PlayerStat stat="LightningMaximumHitTaken" value="238438"/><PlayerStat stat="ChaosMaximumHitTaken" value="16595"/><PlayerStat stat="FireResist" value="76"/><PlayerStat stat="ColdResist" value="75"/><PlayerStat stat="LightningResist" value="75"/><PlayerStat stat="ChaosResist" value="75"/><PlayerStat stat="LifeRegenRecovery" value="482.9"/><PlayerStat stat="LifeLeechGainRate" value="640.7"/></Build></PathOfBuilding>`);
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.defence.score).toBe(10);
+    expect(quality.defence.basis.some((item) => item.includes("Exceptional tank benchmark reached"))).toBe(true);
+  });
+
   it("ignores an exported zero FullDPS when a positive TotalDPS exists", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="15000000"/><PlayerStat stat="TotalEHP" value="90000"/><PlayerStat stat="PhysicalMaximumHitTaken" value="20000"/></Build></PathOfBuilding>`);
     const quality = calculateBuildQuality(build, []);
