@@ -57,6 +57,8 @@ export interface ImportedStats {
   combinedDps?: number;
   averageDps?: number;
   averageHit?: number;
+  criticalStrikeChance?: number;
+  criticalStrikeMultiplier?: number;
   speed?: number;
   life?: number;
   energyShield?: number;

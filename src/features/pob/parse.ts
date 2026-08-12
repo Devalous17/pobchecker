@@ -180,6 +180,8 @@ export function parsePobXml(xml: string): NormalizedBuild {
     combinedDps: stat("CombinedDPS"),
     averageDps: stat("AverageDPS"),
     averageHit: stat("AverageHit", "AverageDamage"),
+    criticalStrikeChance: stat("CriticalStrikeChance", "CritChance", "EffectiveCritChance"),
+    criticalStrikeMultiplier: stat("CriticalStrikeMultiplier", "CritMultiplier"),
     speed: stat("Speed"),
     life: stat("Life"),
     energyShield: stat("EnergyShield"),

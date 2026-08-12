@@ -207,6 +207,7 @@ const hasUniformElementalMaximumHit = (stats: Stats) => {
 };
 const statRows = (stats: Stats, rows: { key: string; label: string; tone?: string; format?: "number" | "percent" }[]) => rows.filter((row) => isNumber(stats[row.key]) && stats[row.key] !== 0).map((row) => ({ ...row, value: row.format === "percent" ? percent(stats[row.key]) : compactNumber(stats[row.key]) }));
 const importedDps = (value: unknown) => isNumber(value) && value > 0 ? compactNumber(value) : "Not exported";
+const importedPercent = (value: unknown) => isNumber(value) && value > 0 ? `${compactNumber(value)}%` : "Not exported";
 
 const reportTabs: Array<{ id: ReportTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -261,13 +262,20 @@ function FigmaPanel({ title, eyebrow, children, className = "" }: { title: strin
 }
 
 function FigmaScore({ label, rating, emphasis = "gold", icon }: { label: string; rating: BuildQuality["overall"]; emphasis?: "gold" | "blue"; icon?: string }) {
-  return <div className={`figma-score figma-score-${emphasis} ${label.toLowerCase().startsWith("overall") ? "figma-score-overall" : ""}`}><i className="figma-score-icon" aria-hidden="true">{icon}</i><span>{rating.grade}</span><strong>{rating.score === null ? "?" : rating.score.toFixed(1)}<small>/10</small></strong><em>{label}</em></div>;
+  const asset = label.toLowerCase().startsWith("overall") ? "/icons/overall-rating.png" : label.toLowerCase().startsWith("offence") ? "/icons/offence-overview.png" : label.toLowerCase().startsWith("defence") ? "/icons/defence-overview.png" : null;
+  return <div className={`figma-score figma-score-${emphasis} ${label.toLowerCase().startsWith("overall") ? "figma-score-overall" : ""}`}><i className="figma-score-icon" aria-hidden="true">{asset ? <img src={asset} alt="" /> : icon}</i><span>{rating.grade}</span><strong>{rating.score === null ? "?" : rating.score.toFixed(1)}<small>/10</small></strong><em>{label}</em></div>;
 }
 
 function statIconAsset(label: string, tone = "") {
   if (/configured pob dps/i.test(label)) return "/icons/configured-pob-dps.png";
   if (/hit dps/i.test(label)) return "/icons/hit-dps.png";
   if (/attack \/ cast speed/i.test(label)) return "/icons/attack-cast-speed.png";
+  if (/average hit/i.test(label)) return "/icons/average-hit.png";
+  if (/critical strike chance|crit chance/i.test(label)) return "/icons/critical-strike-chance.png";
+  if (/critical strike multiplier|crit multiplier/i.test(label)) return "/icons/critical-strike-multiplier.png";
+  if (/effective hit pool/i.test(label)) return "/icons/effective-hit-pool.png";
+  if (/evasion/i.test(label)) return "/icons/evasion.png";
+  if (/spell suppression/i.test(label)) return "/icons/spell-suppression.png";
   if (/life/i.test(label)) return "/icons/life.png";
   if (/energy shield|^es/i.test(label) || tone === "energy") return "/icons/energy-shield.png";
   if (/mana/i.test(label)) return "/icons/mana.png";
@@ -280,9 +288,12 @@ function statIconAsset(label: string, tone = "") {
   return null;
 }
 
+let activeImportedStats: Record<string, unknown> | null = null;
+
 function FigmaStatTile({ label, value, tone = "gold", icon = "•", source }: { label: string; value: string; tone?: string; icon?: string; source?: string }) {
   const asset = statIconAsset(label, tone);
-  return <div className={`figma-stat-tile tone-${tone}`}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div>;
+  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedPercent(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /></> : null;
+  return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div></>;
 }
 
 function figmaStatIcon(tone = "gold", label = "") {
@@ -420,12 +431,14 @@ function DefenceTipsV2({ report }: { report: Report }) {
 
 function StaticOverviewTab({ report }: { report: Report }) {
   const stats = report.build.importedStats;
+  activeImportedStats = stats as unknown as Record<string, unknown>;
   const defenceRows = statRows(stats, [{ key: "physicalMaximumHit", label: "Physical maximum hit", tone: "physical" }, { key: "fireMaximumHit", label: "Fire maximum hit", tone: "fire" }, { key: "coldMaximumHit", label: "Cold maximum hit", tone: "cold" }, { key: "lightningMaximumHit", label: "Lightning maximum hit", tone: "lightning" }, { key: "chaosMaximumHit", label: "Chaos maximum hit", tone: "chaos" }]).map((row) => ({ label: row.label, value: row.value, tone: row.tone }));
   return <><StaticQualityOverview report={report} /><div className="figma-two-column"><FigmaPanel title="Offence summary" eyebrow="Imported damage output" className="figma-summary-panel"><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Imported" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Imported" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported" /></div></FigmaPanel><FigmaPanel title="Defence summary" eyebrow="Imported survivability" className="figma-summary-panel"><div className="figma-stat-grid"><FigmaStatTile label="Life" value={stats.life ? compactNumber(stats.life) : "Not exported"} tone="life" icon="♥" source="Imported" /><FigmaStatTile label="Effective hit pool" value={stats.effectiveHealthPool ? compactNumber(stats.effectiveHealthPool) : "Not exported"} tone="ehp" icon="◉" source="Imported" /><FigmaStatTile label="Energy shield" value={stats.energyShield ? compactNumber(stats.energyShield) : "Not exported"} tone="energy" icon="●" source="Imported" /><FigmaStatTile label="Mana" value={stats.mana ? compactNumber(stats.mana) : "Not exported"} tone="mana" icon="◌" source="Imported" /></div><h3 className="figma-subheading">Maximum hit</h3><FigmaRows rows={defenceRows} /></FigmaPanel></div><FigmaPanel title="Imported Path of Building snapshot" eyebrow="Exact source data" className="figma-snapshot-panel"><div className="figma-snapshot-head"><div><h1>{report.mainSkill ?? report.build.identity.name}</h1><p>{[report.build.identity.ascendancy ?? report.build.identity.className, report.build.identity.level && `Level ${report.build.identity.level}`, report.build.identity.version].filter(Boolean).join("  ·  ")}</p></div><div className="figma-inline-badges"><span>EXACT IMPORTS</span><span>{report.audit.conditional} CONDITIONAL EFFECTS</span>{report.audit.unverified > 0 && <span>{report.audit.unverified} UNVERIFIED</span>}</div></div></FigmaPanel><FigmaPanel title="Build loadout" eyebrow="Imported equipment and socket groups" className="figma-loadout-panel"><BuildLoadoutPanel skillSetups={report.build.skillSetups} equippedItems={report.build.equippedItems} summary={report.sourceSummary} /></FigmaPanel></>;
 }
 
 function StaticOffenceTab({ report }: { report: Report }) {
   const stats = report.build.importedStats;
+  activeImportedStats = stats as unknown as Record<string, unknown>;
   const mainChannel = report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
   return <><FigmaPanel title="Offence" eyebrow="Imported damage output" className="figma-page-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">IMPORTED SETUP</span></div><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /></div><OffenceConditionSummary report={report} /></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel><OffenceTipsV2 report={report} /><RatingExplanation title="offence" rating={report.quality.offence} /></>;
 }
