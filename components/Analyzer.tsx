@@ -208,6 +208,7 @@ const hasUniformElementalMaximumHit = (stats: Stats) => {
 const statRows = (stats: Stats, rows: { key: string; label: string; tone?: string; format?: "number" | "percent" }[]) => rows.filter((row) => isNumber(stats[row.key]) && stats[row.key] !== 0).map((row) => ({ ...row, value: row.format === "percent" ? percent(stats[row.key]) : compactNumber(stats[row.key]) }));
 const importedDps = (value: unknown) => isNumber(value) && value > 0 ? compactNumber(value) : "Not exported";
 const importedPercent = (value: unknown) => isNumber(value) && value > 0 ? `${compactNumber(value)}%` : "Not exported";
+const importedCritMultiplier = (value: unknown) => isNumber(value) && value > 0 ? `${compactNumber(value <= 10 ? value * 100 : value)}%` : "Not exported";
 
 const reportTabs: Array<{ id: ReportTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -292,7 +293,7 @@ let activeImportedStats: Record<string, unknown> | null = null;
 
 function FigmaStatTile({ label, value, tone = "gold", icon = "•", source }: { label: string; value: string; tone?: string; icon?: string; source?: string }) {
   const asset = statIconAsset(label, tone);
-  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedPercent(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /></> : null;
+  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedCritMultiplier(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /></> : null;
   return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}</div></>;
 }
 
