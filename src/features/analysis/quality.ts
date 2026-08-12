@@ -213,7 +213,11 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   const evidenceCount = [resistanceScore > 0, pool > 0, mitigationScore > 0, maxHit.length > 0].filter(Boolean).length;
   if (!evidenceCount) return rating(null, "Unknown", ["No resistance, survivability-pool, mitigation, or maximum-hit evidence was exported."]);
   const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
-  const score = Math.max(1, Math.min(10, resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty));
+  const rawScore = resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty;
+  const recoveryCeiling = strongestRecovery >= 500 ? 10 : strongestRecovery >= 100 ? 9.6 : strongestRecovery > 0 ? 9.4 : 9.3;
+  const hitCeiling = maxHit.length && maxHitScore >= 4 ? 10 : 9.5;
+  const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, 10));
+  if (score < rawScore) basis.push(`Defence quality ceiling: ${round1(score)}/10 because maximum-hit and avoidance strength cannot represent sustained survival without stronger recovery and hit coverage.`);
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
 }
 
