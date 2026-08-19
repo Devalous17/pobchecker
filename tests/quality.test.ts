@@ -66,6 +66,22 @@ describe("build quality rating", () => {
     expect(quality.offence.score).toBeGreaterThan(2);
   });
 
+  it("rates the displayed PoB skill from Hit DPS when Full DPS is missing", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Lightning Warp"/><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="667109"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Lightning Warp" name="Lightning Warp"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    build.mainSkillSelection = { method: "pob-marker", selectedSkill: "Lightning Warp", reason: "test", comparedCandidates: [], warnings: [] };
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.offence.score).not.toBeNull();
+    expect(quality.ratingDps.value).toBe(667109);
+    expect(quality.ratingDps.label).toMatch(/Lightning Warp/);
+  });
+
+  it("uses a conservative floor instead of ? when PoB exports no positive damage channel", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Lightning Warp"/><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="0"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Lightning Warp" name="Lightning Warp"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    const quality = calculateBuildQuality(build, []);
+    expect(quality.offence.score).toBe(1);
+    expect(quality.offence.grade).toBe("F");
+  });
+
   it("uses aggregate PoB DPS before falling back to hit DPS", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="CombinedDPS" value="22000000"/><PlayerStat stat="TotalDPS" value="800000"/></Build></PathOfBuilding>`);
     expect(importedRatingDps(build)).toMatchObject({ value: 22_000_000, label: "Combined PoB DPS", origin: "imported" });

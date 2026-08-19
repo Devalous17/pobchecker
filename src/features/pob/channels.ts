@@ -22,14 +22,16 @@ const kindFor = (skill: SkillGemInfo, setup: SkillSetup): { kind: DamageChannelK
   // Classify the active gem itself. Scanning every gem in the socket group
   // makes a single Totem/DoT support mislabel unrelated active skills.
   const text = `${skill.name} ${skill.displayName ?? ""} ${setup.label} ${skill.detail}`;
+  const tags = (skill.tags ?? []).map((tag) => tag.toLowerCase().replace(/-/g, "_")).join(" ");
+  const taggedText = `${tags} ${text}`;
   const evidence: string[] = [];
-  if (/minion|summon|skeleton|zombie|spectre|golem|absolution|animate|spider|sentinel|srs/i.test(text)) { evidence.push("The skill or setup identifies a minion/summon channel."); return { kind: "minion", evidence, confidence: "Medium" }; }
-  if (/totem|ballista/i.test(text)) { evidence.push("The skill or setup identifies a totem/ballista channel."); return { kind: "totem", evidence, confidence: "High" }; }
-  if (/trap/i.test(text)) { evidence.push("The skill identifies a trap delivery channel."); return { kind: "trap", evidence, confidence: "High" }; }
-  if (/mine/i.test(text)) { evidence.push("The skill identifies a mine delivery channel."); return { kind: "mine", evidence, confidence: "High" }; }
-  if (/brand/i.test(text)) { evidence.push("The skill identifies a brand channel."); return { kind: "brand", evidence, confidence: "High" }; }
+  if (/minion|summon|skeleton|zombie|spectre|golem|absolution|animate|spider|sentinel|srs/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a minion/summon channel: ${tags}.` : "The skill or setup identifies a minion/summon channel."); return { kind: "minion", evidence, confidence: tags ? "High" : "Medium" }; }
+  if (/totem|ballista/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a totem/ballista channel: ${tags}.` : "The skill or setup identifies a totem/ballista channel."); return { kind: "totem", evidence, confidence: tags ? "High" : "High" }; }
+  if (/trap/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a trap delivery channel: ${tags}.` : "The skill identifies a trap delivery channel."); return { kind: "trap", evidence, confidence: "High" }; }
+  if (/mine/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a mine delivery channel: ${tags}.` : "The skill identifies a mine delivery channel."); return { kind: "mine", evidence, confidence: "High" }; }
+  if (/brand/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a brand channel: ${tags}.` : "The skill identifies a brand channel."); return { kind: "brand", evidence, confidence: "High" }; }
   if (skill.skillPart !== undefined || skill.skillCount !== undefined) { evidence.push("PoB exported an explicit skill part or count for this channel."); return { kind: "secondary", evidence, confidence: "Medium" }; }
-  if (/ignite|bleed|poison|burn|wither|decay|essence drain|caustic|righteous fire|contagion|damage over time|dot/i.test(text)) { evidence.push("The skill or setup contains a damage-over-time indicator."); return { kind: "damage-over-time", evidence, confidence: "Medium" }; }
+  if (/ignite|bleed|poison|burn|wither|decay|essence drain|caustic|righteous fire|contagion|damage_over_time|damage over time|dot/i.test(taggedText)) { evidence.push(tags ? `PoB tags identify a damage-over-time channel: ${tags}.` : "The skill or setup contains a damage-over-time indicator."); return { kind: "damage-over-time", evidence, confidence: tags ? "High" : "Medium" }; }
   evidence.push("Active non-support gem discovered; exact hit/DoT composition remains a PoB worker result.");
   return { kind: "unknown", evidence, confidence: "Low" };
 };

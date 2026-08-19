@@ -9,6 +9,8 @@ export interface TreeGraphNode extends PassiveNode { id: string; }
 export interface SourceAsset { category: "gem" | "item" | "flask" | "passive" | "ascendancy"; name: string; detail: string; iconUrl?: string; attributeColor: "int" | "dex" | "str" | "hybrid" | "unknown"; }
 export interface SkillGemInfo {
   name: string;
+  gemId?: string;
+  source?: string;
   displayName?: string;
   level?: number;
   quality?: number;
@@ -22,6 +24,8 @@ export interface SkillGemInfo {
   includeInFullDPS: boolean;
   metadataSource?: "pob" | "xml" | "unknown";
   tags?: string[];
+  delivery?: string;
+  damageModel?: string;
   skillPart?: number;
   skillCount?: number;
 }
@@ -30,10 +34,37 @@ export interface SkillSetup {
   engineIndex?: number;
   label: string;
   slot?: string;
+  source?: string;
   enabled: boolean;
   includeInFullDPS: boolean;
   mainActiveSkill?: boolean;
+  /** PoB stores the active-gem position here when a linked setup has more than one active gem. */
+  mainActiveSkillIndex?: number;
+  externalSupportEvidence?: string[];
+  effectiveLinkCount?: number;
   gems: SkillGemInfo[];
+}
+export interface MainSkillCandidateEvidence {
+  skillName: string;
+  displayName?: string;
+  setupId: string;
+  setupLabel: string;
+  setupIndex?: number;
+  dps?: number;
+  dpsSource?: string;
+  status: "calculated" | "zero" | "unavailable" | "failed";
+}
+export interface MainSkillSelection {
+  method: "worker-dps" | "pob-marker" | "fallback";
+  selectedSkill: string;
+  selectedSetupId?: string;
+  selectedSetupLabel?: string;
+  selectedSetupIndex?: number;
+  selectedDps?: number;
+  selectedHitDps?: number;
+  reason: string;
+  comparedCandidates: MainSkillCandidateEvidence[];
+  warnings: string[];
 }
 export type { DamageChannel, DamageChannelKind } from "@/src/features/pob/channels";
 export type { SkillCapabilityProfile } from "@/src/features/analysis/capabilities";
@@ -55,11 +86,23 @@ export interface ImportedStats {
   totalDps?: number;
   totalDotDps?: number;
   combinedDps?: number;
+  minionTotalDps?: number;
+  minionTotalDotDps?: number;
+  minionCombinedDps?: number;
+  minionAverageHit?: number;
+  minionSpeed?: number;
+  activeMinionLimit?: number;
+  poisonDps?: number;
+  poisonTotalDps?: number;
+  bleedDps?: number;
+  igniteDps?: number;
   averageDps?: number;
   averageHit?: number;
   criticalStrikeChance?: number;
   criticalStrikeMultiplier?: number;
   speed?: number;
+  movementSpeed?: number;
+  areaOfEffectRadius?: number;
   life?: number;
   energyShield?: number;
   mana?: number;
@@ -105,7 +148,25 @@ export interface QualityRating { score: number | null; grade: QualityGrade | "?"
 export interface RatingDpsEvidence { value: number | null; label: string; origin: "imported" | "worker-typical" | "worker-configured" | "unavailable"; explanation: string; importedValue?: number; differencePercent: number; verification: "not-run" | "matched" | "mismatch"; }
 export type OverviewRatingKey = "dps" | "clear" | "defence" | "bossing";
 export type OverviewRatings = Record<OverviewRatingKey, QualityRating>;
-export interface BuildQuality { overall: QualityRating; offence: QualityRating; defence: QualityRating; categoryRatings: OverviewRatings; capabilityProfile: import("@/src/features/analysis/capabilities").SkillCapabilityProfile; ratingDps: RatingDpsEvidence; assumptions: string[]; limitations: string[]; }
+export type ContentCapabilityKey = "mapping" | "pinnacle-bosses" | "invitations" | "delve" | "blight" | "ritual";
+export type ContentVerdict = "Comfortable" | "Viable" | "Conditional" | "Not evidenced";
+export interface ContentCapability {
+  key: ContentCapabilityKey;
+  label: string;
+  rating: QualityRating;
+  verdict: ContentVerdict;
+  evidence: string[];
+  risks: string[];
+}
+export interface ContentCoverage {
+  overall: QualityRating;
+  viableCount: number;
+  totalCount: number;
+  capabilities: ContentCapability[];
+  basis: string[];
+  limitations: string[];
+}
+export interface BuildQuality { overall: QualityRating; offence: QualityRating; defence: QualityRating; categoryRatings: OverviewRatings; contentCoverage: ContentCoverage; capabilityProfile: import("@/src/features/analysis/capabilities").SkillCapabilityProfile; ratingDps: RatingDpsEvidence; assumptions: string[]; limitations: string[]; }
 export type LayerSide = "offence" | "defence";
 export type LayerSnapshotState = "baseline" | "typical" | "peak";
 export interface LayerSnapshot {
@@ -150,6 +211,9 @@ export interface BuildLayerAnalysis {
 export interface NormalizedBuild {
   identity: BuildIdentity;
   mainSkill?: string;
+  /** Exact FullDPSSkill value exported by PoB, retained separately from the display name. */
+  fullDpsSkill?: string;
+  mainSkillSelection?: MainSkillSelection;
   rawXml: string;
   sections: string[];
   enabledConfigs: string[];

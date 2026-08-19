@@ -16,7 +16,7 @@ type Evidence = { kind: string; label: string; detail: string };
 type Condition = { id: string; displayName: string; category: string; reliability: string; confidence: string; explanation: string; sourceDetected: boolean; activationRequirement: string; statsAffected: string[]; evidence: Evidence[] };
 type Asset = { category: string; name: string; detail: string; iconUrl?: string; attributeColor: string };
 type Gem = { name: string; displayName?: string; level?: number; quality?: number; attributeColor: string; detail: string; iconUrl?: string; support: boolean; trigger: boolean; provided: boolean; enabled: boolean; includeInFullDPS: boolean; skillPart?: number; skillCount?: number };
-type SkillSetup = { id: string; engineIndex?: number; label: string; slot?: string; enabled: boolean; includeInFullDPS: boolean; mainActiveSkill?: boolean; gems: Gem[] };
+type SkillSetup = { id: string; engineIndex?: number; label: string; slot?: string; enabled: boolean; includeInFullDPS: boolean; mainActiveSkill?: boolean; mainActiveSkillIndex?: number; externalSupportEvidence?: string[]; effectiveLinkCount?: number; gems: Gem[] };
 type EquippedItem = { id?: string; slot: string; name: string; rarity?: string; baseType?: string; text: string; iconUrl?: string; corrupted?: boolean; links?: string; isFlask: boolean };
 type Comparison = { url: string; account?: string; character?: string; league?: string; level?: number; className?: string; source: string; diagnostics: string[] };
 type PassiveNode = { id?: string; name: string; type: string; allocated: boolean; x?: number; y?: number; links?: string[] };
@@ -27,7 +27,7 @@ type ScenarioResult = Record<string, Metric> & { timeline?: Timeline[]; recommen
 type ReportTab = "overview" | "offence" | "defence" | "conditions" | "comparison";
 type Report = {
   mainSkill?: string;
-  build: { identity: { name: string; level?: number; className?: string; ascendancy?: string; version?: string }; mainSkill?: string; skills: string[]; items: string[]; sections: string[]; rawXml: string; sources: { category: string; name: string; detail: string }[]; sourceAssets: Asset[]; skillSetups: SkillSetup[]; damageChannels: DamageChannel[]; equippedItems: EquippedItem[]; importedStats: Stats; passiveNodes: PassiveNode[]; treeGraph?: PassiveNode[] };
+  build: { identity: { name: string; level?: number; className?: string; ascendancy?: string; version?: string }; mainSkill?: string; mainSkillSelection?: { method: string; selectedSkill?: string; selectedDps?: number; selectedHitDps?: number; comparedCandidates?: { skillName: string; dpsSource?: string }[] }; skills: string[]; items: string[]; sections: string[]; rawXml: string; sources: { category: string; name: string; detail: string }[]; sourceAssets: Asset[]; skillSetups: SkillSetup[]; damageChannels: DamageChannel[]; equippedItems: EquippedItem[]; importedStats: Stats; passiveNodes: PassiveNode[]; treeGraph?: PassiveNode[] };
   conditions: Condition[]; auditedConditions: Condition[]; confidence: string; audit: { persistent: number; conditional: number; unverified: number; status: string }; honesty: { score: number; label: string; explanation: string; factors: { label: string; points: number; explanation: string }[] }; quality: BuildQuality; layers: BuildLayerAnalysis; topNotables: PassiveNode[]; sourceSummary: { gems: number; items: number; flasks: number; passives: number; ascendancies: number }; recommendations: { title: string; detail: string; conditionId: string }[]; warnings: string[]; assumptions: string[];
 };
 
@@ -82,8 +82,9 @@ export function Analyzer() {
 
   useEffect(() => {
     if (!showRatingReveal) return;
-    const exitTimer = window.setTimeout(() => setRatingRevealExiting(true), 2600);
-    const hideTimer = window.setTimeout(() => setShowRatingReveal(false), 3000);
+    const hasConfigurationWarning = report ? Boolean(configurationWarning(report)) : false;
+    const exitTimer = hasConfigurationWarning ? undefined : window.setTimeout(() => setRatingRevealExiting(true), 2600);
+    const hideTimer = hasConfigurationWarning ? undefined : window.setTimeout(() => setShowRatingReveal(false), 3000);
     const dismissOnOutsideClick = (event: PointerEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest("[data-rating-reveal]")) return;
@@ -160,12 +161,38 @@ void LegacyAnalyzer;
 
 const ScenarioResultContext = createContext<ScenarioReport | null>(null);
 
+function configurationWarning(report: Report) {
+  const activeSetups = report.build.skillSetups.filter((setup) => setup.enabled);
+  const sixLinks = activeSetups.filter((setup) => (setup.effectiveLinkCount ?? setup.gems.filter((gem) => gem.enabled && !gem.provided).length) >= 6);
+  const stats = report.build.importedStats;
+  const hasPositiveDps = [stats.fullDps, stats.totalDps, stats.totalDotDps, stats.combinedDps].some((value) => isNumber(value) && value > 0);
+  const offenceUnavailable = report.quality.offence.score === null || !hasPositiveDps;
+  if (!sixLinks.length && !offenceUnavailable) return null;
+  if (sixLinks.length > 1) {
+    return {
+      title: "Configuration check: multiple six-link setups detected",
+      summary: `PoB contains ${sixLinks.length} linked setups that could be treated as damage skills. The report will still rate the displayed skill (${report.mainSkill ?? report.build.mainSkill ?? "selected skill"}), but verify that it is the one you actually play.`,
+      steps: ["In PoB, select the skill you actually cast or use for damage.", "Set that setup as the active/main skill and enable Include in Full DPS for it.", "Remove utility skills, auras, movement skills, or alternate damage setups from the Full DPS selection, then export again."],
+    };
+  }
+  if (offenceUnavailable) {
+    return {
+      title: "Configuration check: Offence could not be rated",
+      summary: "The export does not contain a positive Full DPS, Hit DPS, or DoT DPS value for a confidently selected damage setup. This is usually a PoB configuration issue, not proof that the build has no damage.",
+      steps: ["Open the build in PoB and select the skill you actually use.", "Confirm its calculation tab is active and Include in Full DPS is checked for the intended setup.", "Make sure utility skills, auras, and alternate six-links are not selected as the main Full DPS skill, then export a fresh PoB snapshot."],
+    };
+  }
+  return { title: "Configuration check: verify the selected damage setup", summary: "A six-link damage setup was found. Confirm that PoB’s selected Full DPS skill is the skill you actually use before relying on the Offence rating.", steps: ["Verify the active/main skill and Include in Full DPS checkbox in PoB, then export again if you change them."] };
+}
+
 function FigmaRatingReveal({ report, exiting, onDismiss }: { report: Report; exiting: boolean; onDismiss: () => void }) {
   const ratings = [
     ["Overall", report.quality.overall],
     ["Offence", report.quality.offence],
     ["Defence", report.quality.defence],
+    ["Content", report.quality.contentCoverage.overall],
   ] as const;
+  const warning = configurationWarning(report);
 
   return <div className="rating-reveal-layer" aria-live="assertive">
     <section className={`rating-reveal-card ${exiting ? "is-exiting" : ""}`} data-rating-reveal role="status" aria-label="Build rating">
@@ -185,6 +212,7 @@ function FigmaRatingReveal({ report, exiting, onDismiss }: { report: Report; exi
           <em>{label}</em>
         </div>)}
       </div>
+      {warning && <div className="rating-config-warning" role="alert"><div className="rating-config-warning-heading"><span aria-hidden="true">!</span><div><strong>{warning.title}</strong><small>{warning.summary}</small></div></div><ol>{warning.steps.map((step) => <li key={step}>{step}</li>)}</ol><a href="/about#faq-main-skill">Read the FAQ</a></div>}
       <small className="rating-reveal-hint">Click anywhere outside to continue</small>
     </section>
   </div>;
@@ -207,8 +235,14 @@ const hasUniformElementalMaximumHit = (stats: Stats) => {
 };
 const statRows = (stats: Stats, rows: { key: string; label: string; tone?: string; format?: "number" | "percent" }[]) => rows.filter((row) => isNumber(stats[row.key]) && stats[row.key] !== 0).map((row) => ({ ...row, value: row.format === "percent" ? percent(stats[row.key]) : compactNumber(stats[row.key]) }));
 const importedDps = (value: unknown) => isNumber(value) && value > 0 ? compactNumber(value) : "Not exported";
+const importedNumber = (value: unknown) => isNumber(value) && value > 0 ? compactNumber(value) : "Not exported";
 const importedPercent = (value: unknown) => isNumber(value) && value > 0 ? `${compactNumber(value)}%` : "Not exported";
 const importedCritMultiplier = (value: unknown) => isNumber(value) && value > 0 ? `${compactNumber(value <= 10 ? value * 100 : value)}%` : "Not exported";
+const normalizeSkillName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const matchesSkillName = (value: string, wanted: string) => {
+  const normalizedWanted = normalizeSkillName(wanted);
+  return Boolean(normalizedWanted) && normalizeSkillName(value) === normalizedWanted;
+};
 
 const reportTabs: Array<{ id: ReportTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -245,11 +279,11 @@ function FigmaConditionsTabV2({ report, scenarioResult, onScenarioResult }: { re
 function FigmaChrome({ report, source, setSource, loading, onAnalyze, onReset, activeTab, setActiveTab }: { report: Report | null; source: string; setSource: (value: string) => void; loading: boolean; onAnalyze: () => void; onReset: () => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
   const identity = report?.build.identity;
   return <>
-    <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><a href="https://poe.ninja/poe1/builds" target="_blank" rel="noreferrer">Poe.ninja</a><span className="site-credit">Made by Devalous</span></nav></div>
+    <div className="utility-bar figma-utility-bar"><span>pob-reality-check.com</span><nav aria-label="Utility navigation"><a href="https://www.pathofexile.com" target="_blank" rel="noreferrer">Path of Exile</a><span className="site-credit">Made by Devalous</span></nav></div>
     <header className="mainbar figma-mainbar">
       <button type="button" className="brand-lockup brand-home-button" onClick={onReset} aria-label="Return to PoB Rating Checker home"><div className="brand-crest"><img src="/icons/path-of-exile-logo.png" alt="Path of Exile" /></div><div><div className="brand-name">PoB Rating Checker</div><div className="brand-subtitle">PoB ceiling - combat reality</div></div></button>
       <nav className="main-tabs figma-report-tabs" aria-label="Report navigation">
-        {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+        {reportTabs.map((tab) => <button key={tab.id} type="button" className={report && activeTab === tab.id ? "active" : ""} disabled={!report} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}<a className="about-report-tab" href="/about">About</a>
       </nav>
       <div className="header-analyze"><label htmlFor="header-pob-source" className="sr-only">pobb.in URL or PoB import code</label><input id="header-pob-source" className="poe-input" value={source} onChange={(event) => setSource(event.target.value)} placeholder="pobb.in/... or PoB code" onKeyDown={(event) => { if (event.key === "Enter") onAnalyze(); }} /><button type="button" className="poe-btn poe-btn-gold" onClick={onAnalyze} disabled={loading || !source.trim()}>{loading ? "Reading..." : "Analyse"}</button></div>
       <span className="engine-chip figma-game-chip">POE 1</span>
@@ -278,6 +312,8 @@ function statIconAsset(label: string, tone = "") {
   if (/evasion/i.test(label)) return "/icons/evasion.png";
   if (/spell suppression/i.test(label)) return "/icons/spell-suppression.png";
   if (/physical maximum hit/i.test(label)) return "/icons/physical-max-hit.png";
+  if (/damage-over-time dps|dot dps/i.test(label)) return "/icons/damage-over-time.png";
+  if (/aoe radius|area of effect radius/i.test(label)) return "/icons/damage-over-time.png";
   if (/life/i.test(label)) return "/icons/life.png";
   if (/energy shield|^es/i.test(label) || tone === "energy") return "/icons/energy-shield.png";
   if (/mana/i.test(label)) return "/icons/mana.png";
@@ -291,12 +327,29 @@ function statIconAsset(label: string, tone = "") {
 }
 
 let activeImportedStats: Record<string, unknown> | null = null;
+let activeMainSkillSelection: { method?: string; selectedSkill?: string; selectedDps?: number; selectedHitDps?: number } | undefined;
 
 function FigmaStatTile({ label, value, tone = "gold", icon = "•", source }: { label: string; value: string; tone?: string; icon?: string; source?: string }) {
   const asset = statIconAsset(label, tone);
-  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Critical Strike Multiplier" value={importedCritMultiplier(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported" /><FigmaStatTile label="Damage-over-Time DPS" value={importedDps(activeImportedStats.totalDotDps)} tone="damage" icon="◈" source="Imported DoT output" /></> : null;
+  const critTiles = /attack \/ cast speed/i.test(label) && activeImportedStats ? <><FigmaStatTile label="Critical Strike Chance" value={importedPercent(activeImportedStats.criticalStrikeChance)} tone="gold" icon="✧" source="Imported player stat" /><FigmaStatTile label="Critical Strike Multiplier" value={importedCritMultiplier(activeImportedStats.criticalStrikeMultiplier)} tone="gold" icon="✧" source="Imported player stat" /><FigmaStatTile label="Damage-over-Time DPS" value={importedDps(activeImportedStats.totalDotDps)} tone="damage" icon="◈" source={isNumber(activeImportedStats.minionTotalDotDps) ? "Imported MinionStat DoT output" : "Imported DoT output"} />{isNumber(activeImportedStats.poisonTotalDps) && <FigmaStatTile label="Poison DPS" value={importedDps(activeImportedStats.poisonTotalDps)} tone="damage" icon="☠" source="Imported MinionStat WithPoisonDPS" />}</> : null;
   const detail = /configured pob dps/i.test(label) ? "This value only appears when the intended damage skill or setup is checked Include in Full DPS in Path of Building." : undefined;
-  return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`} title={detail}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{label}</small><strong>{value}</strong>{source && <em>{source}</em>}{detail && <span className="figma-stat-help">ⓘ Include in Full DPS</span>}</div></>;
+  const selectedDps = activeMainSkillSelection?.selectedDps;
+  const isDpsTile = /^(configured pob dps|hit dps)$/i.test(label);
+  const selectedHitDps = activeMainSkillSelection?.selectedHitDps;
+  const hasSelectedDps = isNumber(selectedDps) || isNumber(selectedHitDps);
+  const markerBased = activeMainSkillSelection?.method === "pob-marker";
+  const displayLabel = markerBased && isDpsTile && /configured/i.test(label) ? "Main skill DPS" : markerBased && isDpsTile ? "Hit DPS" : activeMainSkillSelection && isDpsTile && /configured/i.test(label) ? "Main skill DPS" : activeMainSkillSelection && isDpsTile && hasSelectedDps ? "Main skill Hit DPS" : activeMainSkillSelection && isDpsTile ? "Imported snapshot DPS" : label;
+  const displayValue = activeMainSkillSelection && isDpsTile && /configured/i.test(label)
+    ? markerBased ? importedDps(activeImportedStats?.fullDps) : (isNumber(selectedDps) ? compactNumber(selectedDps) : "Worker required")
+      : activeMainSkillSelection && isDpsTile
+      ? markerBased ? importedDps(activeImportedStats?.totalDps ?? activeImportedStats?.minionTotalDps) : hasSelectedDps ? compactNumber(selectedHitDps ?? selectedDps) : importedDps(activeImportedStats?.totalDps ?? activeImportedStats?.minionTotalDps ?? activeImportedStats?.fullDps)
+      : value;
+  const displaySource = activeMainSkillSelection && isDpsTile && /configured/i.test(label)
+    ? markerBased ? "PoB Include in Full DPS" : (isNumber(selectedDps) ? "Worker-calculated selected skill" : "Selected skill identified; stale snapshot hidden")
+      : activeMainSkillSelection && isDpsTile
+      ? markerBased ? "PoB TotalDPS snapshot" : hasSelectedDps ? "Worker-calculated selected skill" : "Exact PoB snapshot for another selected setup"
+      : source;
+  return <>{critTiles}<div className={`figma-stat-tile tone-${tone}`} title={detail}><span className={`figma-stat-icon ${asset ? "has-image" : ""}`}>{asset ? <img src={asset} alt="" /> : icon}</span><small>{displayLabel}</small><strong>{displayValue}</strong>{displaySource && <em>{displaySource}</em>}{detail && <span className="figma-stat-help">ⓘ Include in Full DPS</span>}</div></>;
 }
 
 function figmaStatIcon(tone = "gold", label = "") {
@@ -331,26 +384,56 @@ function scenarioValue(result: ScenarioReport | null, key: keyof ScenarioReport)
 
 function StaticQualityOverview({ report }: { report: Report }) {
   const reviewCount = report.conditions.filter((condition) => !condition.sourceDetected || condition.reliability !== "Reliable").length;
-  const evidenceCount = report.conditions.filter((condition) => condition.sourceDetected).length;
   return <FigmaPanel title="Build quality overview" eyebrow="Honest imported snapshot" className="figma-quality-panel">
     <div className="figma-quality-grid">
       <div className="figma-quality-copy">
         <span className="figma-verdict-kicker">THE REALITY CHECK</span>
         <h1>How good is this build?</h1>
-        <p>This rating uses the damage, defence, and conditions actually present in the imported Path of Building snapshot. It does not invent alternate combat scenarios.</p>
+        <p>This rating separates raw power from content breadth. It uses the damage, defence, delivery model, and conditions actually present in the imported Path of Building snapshot.</p>
         <ul>{report.quality.overall.basis.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
       </div>
       <FigmaScore label="Overall build" rating={report.quality.overall} icon="◉" />
       <div className="figma-score-stack"><FigmaScore label="Offence" rating={report.quality.offence} icon="⚔" /><FigmaScore label="Defence" rating={report.quality.defence} emphasis="blue" icon="◈" /></div>
     </div>
     <FigmaOverviewRatingGrid ratings={report.quality.categoryRatings} />
-    <div className="figma-reality-proof"><div><span>RATING DPS</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label}</small></div><div><span>CONDITIONS WITH EVIDENCE</span><strong>{evidenceCount}</strong><small>Source-backed effects found in the build</small></div><div><span>NEEDS REVIEW</span><strong>{reviewCount}</strong><small>Temporary, situational, or unverified dependencies</small></div></div>
+    <ContentCoverageSummary coverage={report.quality.contentCoverage} />
+    <div className="figma-reality-proof"><div><span>RATING DPS</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label}</small></div><div><span>REVIEW FLAGS</span><strong>{reviewCount}</strong><small>Temporary or situational dependencies to inspect in Conditions</small></div></div>
   </FigmaPanel>;
+}
+
+function ContentCoverageSummary({ coverage }: { coverage: BuildQuality["contentCoverage"] }) {
+  const verdictClass = (verdict: string) => verdict.toLowerCase().replace(/\s+/g, "-");
+  return <section className="figma-content-coverage" aria-labelledby="content-coverage-title">
+    <div className="figma-subsection-heading">
+      <div><span>CONTENT COVERAGE</span><strong id="content-coverage-title">What this build can realistically do</strong></div>
+      <small>{coverage.viableCount}/{coverage.totalCount} jobs viable or better</small>
+    </div>
+    <p className="figma-explainer">Each job is rated separately. “Comfortable” means the imported evidence supports it; “Conditional” means the build may do it, but the export shows a meaningful limitation.</p>
+    <div className="figma-content-overview">
+      <div className="figma-content-overall"><span>CONTENT BREADTH</span><strong>{coverage.overall.score === null ? "?" : coverage.overall.score.toFixed(1)}</strong><b>{coverage.overall.grade}</b><small>{coverage.overall.label}</small></div>
+      <div className="figma-content-breadth"><strong>{coverage.viableCount} of {coverage.totalCount}</strong><span>content jobs rated viable or better</span><p>{coverage.overall.basis[1] ?? "Coverage is based on offence, defence, delivery, and content-specific evidence."}</p></div>
+    </div>
+    <div className="figma-content-grid">{coverage.capabilities.map((content) => <article className={`figma-content-card verdict-${verdictClass(content.verdict)}`} key={content.key}>
+      <div className="figma-content-card-head"><div><span>{content.label}</span><strong>{content.rating.score === null ? "?" : content.rating.score.toFixed(1)} <small>{content.rating.grade}</small></strong></div><b>{content.verdict}</b></div>
+      <p>{content.evidence[1] ?? content.evidence[0]}</p>
+      <small>{content.risks[0] ?? "No additional caveat detected."}</small>
+      <details><summary>Why this rating</summary><ul>{content.rating.basis.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul></details>
+    </article>)}</div>
+  </section>;
 }
 
 function numericStat(stats: Stats, key: string) {
   const value = stats[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function mainSkillStats(report: Report): Stats {
+  const stats = report.build.importedStats;
+  const selection = report.build.mainSkillSelection;
+  if (!selection || selection.method === "pob-marker") return stats;
+  const selectedDps = selection.selectedDps;
+  if (!isNumber(selectedDps)) return { ...stats, fullDps: undefined, totalDps: undefined };
+  return { ...stats, fullDps: selectedDps, totalDps: selection.selectedHitDps ?? selectedDps };
 }
 
 function DefenceLayerTarget({ label, current, target, suffix = "", note }: { label: string; current: number | null; target?: number; suffix?: string; note: string }) {
@@ -384,20 +467,21 @@ function RatingExplanation({ title, rating }: { title: string; rating: BuildQual
 }
 
 function OffenceTips({ report }: { report: Report }) {
-  const fullDps = numericStat(report.build.importedStats, "fullDps");
-  const hitDps = numericStat(report.build.importedStats, "totalDps");
+  const offenceStats = mainSkillStats(report);
+  const fullDps = numericStat(offenceStats, "fullDps");
+  const hitDps = numericStat(offenceStats, "totalDps");
   const dps = fullDps !== null && fullDps > 0 ? fullDps : hitDps;
   const dpsLabel = fullDps !== null && fullDps > 0 ? "Configured PoB DPS" : "Hit DPS";
   const allGems = report.build.skillSetups.flatMap((setup) => setup.gems);
   const auraDetected = allGems.some((gem) => /aura|herald|banner|discipline|determination|grace|hatred|anger|wrath|zealotry|malevolence|haste|clarity|precision|vitality|purity|arctic armour/i.test(`${gem.name} ${gem.displayName ?? ""}`));
   const curseDetected = allGems.some((gem) => /curse|mark|hextouch|despair|conductivity|elemental weakness|flammability|frostbite|punishment|vulnerability|assassin.?s mark|sniper.?s mark/i.test(`${gem.name} ${gem.displayName ?? ""}`));
-  const mainSetup = report.build.skillSetups.find((setup) => setup.mainActiveSkill || setup.includeInFullDPS) ?? report.build.skillSetups[0];
-  const sixLinkDetected = report.build.skillSetups.some((setup) => setup.gems.filter((gem) => gem.enabled && !gem.provided).length >= 6) || report.build.equippedItems.some((item) => Number.parseInt(item.links ?? "", 10) >= 6);
+  const mainSetup = report.build.skillSetups.find((setup) => setup.gems.some((gem) => matchesSkillName(gem.name, report.mainSkill ?? "") || matchesSkillName(gem.displayName ?? "", report.mainSkill ?? ""))) ?? report.build.skillSetups.find((setup) => setup.mainActiveSkill || setup.includeInFullDPS) ?? report.build.skillSetups[0];
+  const sixLinkDetected = (mainSetup?.effectiveLinkCount ?? mainSetup?.gems.filter((gem) => gem.enabled && !gem.provided).length ?? 0) >= 6;
   return <FigmaPanel title="General offence tips" eyebrow="Practical normal T16 starting point" className="figma-page-panel figma-tips-panel"><p className="figma-explainer">These are conservative coaching targets for ordinary white Tier 16 mapping. They are not guarantees for juiced maps, bosses, invitations, or dangerous map mods.</p><div className="figma-target-grid"><TargetMetric label="Configured PoB DPS" current={dps} target={5_000_000} note="A practical starting floor for comfortable normal-map clear; mechanics and uptime still matter." /></div><ul className="figma-tip-list"><li>Use the correctly configured main skill and make sure the exported FullDPS represents the setup you actually play.</li><li>Improve uptime before chasing a larger tooltip: movement, range, targeting, coverage, and ramp time can matter more than peak damage.</li><li>Keep conditional damage visible in the conditions tab. A curse, exposure, charge, flask, or “recently” effect is not permanent damage.</li><li>For bosses, prioritize reliable single-target delivery and survival over a number that only exists with every temporary effect active.</li><li>Make sure the skill selected for FullDPS is the skill you actually cast; a high-damage support or alternate setup should not inflate the main rating.</li><li>Check whether your DPS is hit, damage-over-time, minion, totem, trap, or reflected damage. Each has different uptime and delivery limits.</li><li>Improve clear speed with coverage, projectile/area scaling, targeting, and movement—not only by increasing single-target damage.</li><li>Keep exposure, curses, penetration, critical chance, ailment effects, and enemy-state assumptions clearly labeled as conditions.</li></ul></FigmaPanel>;
 }
 
 function OffenceTipsV2({ report }: { report: Report }) {
-  const stats = report.build.importedStats;
+  const stats = mainSkillStats(report);
   const fullDps = numericStat(stats, "fullDps");
   const hitDps = numericStat(stats, "totalDps");
   const dps = fullDps !== null && fullDps > 0 ? fullDps : hitDps;
@@ -405,8 +489,8 @@ function OffenceTipsV2({ report }: { report: Report }) {
   const allGems = report.build.skillSetups.flatMap((setup) => setup.gems);
   const auraDetected = allGems.some((gem) => /aura|herald|banner|discipline|determination|grace|hatred|anger|wrath|zealotry|malevolence|haste|clarity|precision|vitality|purity|arctic armour/i.test(`${gem.name} ${gem.displayName ?? ""}`));
   const curseDetected = allGems.some((gem) => /curse|mark|hextouch|despair|conductivity|elemental weakness|flammability|frostbite|punishment|vulnerability|assassin.?s mark|sniper.?s mark/i.test(`${gem.name} ${gem.displayName ?? ""}`));
-  const mainSetup = report.build.skillSetups.find((setup) => setup.mainActiveSkill || setup.includeInFullDPS) ?? report.build.skillSetups[0];
-  const sixLinkDetected = report.build.skillSetups.some((setup) => setup.gems.filter((gem) => gem.enabled && !gem.provided).length >= 6) || report.build.equippedItems.some((item) => Number.parseInt(item.links ?? "", 10) >= 6);
+  const mainSetup = report.build.skillSetups.find((setup) => setup.gems.some((gem) => matchesSkillName(gem.name, report.mainSkill ?? "") || matchesSkillName(gem.displayName ?? "", report.mainSkill ?? ""))) ?? report.build.skillSetups.find((setup) => setup.mainActiveSkill || setup.includeInFullDPS) ?? report.build.skillSetups[0];
+  const sixLinkDetected = (mainSetup?.effectiveLinkCount ?? mainSetup?.gems.filter((gem) => gem.enabled && !gem.provided).length ?? 0) >= 6;
   return <FigmaPanel title="General offence tips" eyebrow="Practical normal T16 starting point" className="figma-page-panel figma-tips-panel"><p className="figma-explainer">These are conservative coaching targets for ordinary white Tier 16 mapping. They are not guarantees for juiced maps, bosses, invitations, or dangerous map mods.</p><div className="figma-target-grid"><TargetMetric label={dpsLabel} current={dps} target={5_000_000} note="A practical starting floor for comfortable normal-map clear; mechanics and uptime still matter." /></div><div className="figma-offence-feature-grid"><OffenceFeatureCard label="Auras / heralds" status={auraDetected ? "Detected" : "Review"} detail={auraDetected ? "An aura-style gem was found in the imported setup." : "No aura, herald, banner, or reservation skill was identified."} /><OffenceFeatureCard label="Curse / mark support" status={curseDetected ? "Detected" : "Review"} detail={curseDetected ? "A curse or mark was found; confirm its uptime and target reliability." : "No curse or mark was identified in the imported gems."} /><OffenceFeatureCard label="Six-link main setup" status={sixLinkDetected ? "Detected" : "Review"} detail={sixLinkDetected ? "The selected main setup contains six or more gems." : "The selected main setup has fewer than six imported gems."} /><OffenceFeatureCard label="DPS source" status={fullDps !== null && fullDps > 0 ? "Detected" : hitDps !== null && hitDps > 0 ? "Fallback" : "Review"} detail={fullDps !== null && fullDps > 0 ? "Full DPS is being used as the configured source." : hitDps !== null && hitDps > 0 ? "Full DPS was unavailable, so Hit DPS is shown as the fallback." : "No positive Full DPS or Hit DPS was exported."} /></div><ul className="figma-tip-list"><li>Use the correctly configured main skill and make sure the exported DPS represents the setup you actually play.</li><li>Improve uptime before chasing a larger tooltip: movement, range, targeting, coverage, and ramp time can matter more than peak damage.</li><li>Keep conditional damage visible in the conditions tab. A curse, exposure, charge, flask, or recently effect is not permanent damage.</li><li>Check whether your DPS is hit, damage-over-time, minion, totem, trap, or reflected damage. Each has different uptime and delivery limits.</li><li>Improve clear speed with coverage, projectile/area scaling, targeting, and movement—not only by increasing single-target damage.</li></ul></FigmaPanel>;
 }
 
@@ -433,22 +517,22 @@ function DefenceTipsV2({ report }: { report: Report }) {
 }
 
 function StaticOverviewTab({ report }: { report: Report }) {
-  const stats = report.build.importedStats;
-  activeImportedStats = stats as unknown as Record<string, unknown>;
+  const stats = mainSkillStats(report);
+  activeImportedStats = report.build.importedStats as unknown as Record<string, unknown>;
   const defenceRows = statRows(stats, [{ key: "physicalMaximumHit", label: "Physical maximum hit", tone: "physical" }, { key: "fireMaximumHit", label: "Fire maximum hit", tone: "fire" }, { key: "coldMaximumHit", label: "Cold maximum hit", tone: "cold" }, { key: "lightningMaximumHit", label: "Lightning maximum hit", tone: "lightning" }, { key: "chaosMaximumHit", label: "Chaos maximum hit", tone: "chaos" }]).map((row) => ({ label: row.label, value: row.value, tone: row.tone }));
-  return <><StaticQualityOverview report={report} /><div className="figma-two-column"><FigmaPanel title="Offence summary" eyebrow="Imported damage output" className="figma-summary-panel"><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Imported" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Imported" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported" /></div></FigmaPanel><FigmaPanel title="Defence summary" eyebrow="Imported survivability" className="figma-summary-panel"><div className="figma-stat-grid"><FigmaStatTile label="Life" value={stats.life ? compactNumber(stats.life) : "Not exported"} tone="life" icon="♥" source="Imported" /><FigmaStatTile label="Effective hit pool" value={stats.effectiveHealthPool ? compactNumber(stats.effectiveHealthPool) : "Not exported"} tone="ehp" icon="◉" source="Imported" /><FigmaStatTile label="Energy shield" value={stats.energyShield ? compactNumber(stats.energyShield) : "Not exported"} tone="energy" icon="●" source="Imported" /><FigmaStatTile label="Mana" value={stats.mana ? compactNumber(stats.mana) : "Not exported"} tone="mana" icon="◌" source="Imported" /></div><h3 className="figma-subheading">Maximum hit</h3><FigmaRows rows={defenceRows} /></FigmaPanel></div><FigmaPanel title="Imported Path of Building snapshot" eyebrow="Exact source data" className="figma-snapshot-panel"><div className="figma-snapshot-head"><div><h1>{report.mainSkill ?? report.build.identity.name}</h1><p>{[report.build.identity.ascendancy ?? report.build.identity.className, report.build.identity.level && `Level ${report.build.identity.level}`, report.build.identity.version].filter(Boolean).join("  ·  ")}</p></div><div className="figma-inline-badges"><span>EXACT IMPORTS</span><span>{report.audit.conditional} CONDITIONAL EFFECTS</span>{report.audit.unverified > 0 && <span>{report.audit.unverified} UNVERIFIED</span>}</div></div></FigmaPanel><FigmaPanel title="Build loadout" eyebrow="Imported equipment and socket groups" className="figma-loadout-panel"><BuildLoadoutPanel skillSetups={report.build.skillSetups} equippedItems={report.build.equippedItems} summary={report.sourceSummary} /></FigmaPanel></>;
+  return <><StaticQualityOverview report={report} /><div className="figma-two-column"><FigmaPanel title="Offence summary" eyebrow="Imported damage output" className="figma-summary-panel"><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Imported" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Imported" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported" /><FigmaStatTile label="AoE Radius" value={importedNumber(stats.areaOfEffectRadius)} tone="gold" source="Imported from PoB" /></div></FigmaPanel><FigmaPanel title="Defence summary" eyebrow="Imported survivability" className="figma-summary-panel"><div className="figma-stat-grid"><FigmaStatTile label="Life" value={stats.life ? compactNumber(stats.life) : "Not exported"} tone="life" icon="♥" source="Imported" /><FigmaStatTile label="Effective hit pool" value={stats.effectiveHealthPool ? compactNumber(stats.effectiveHealthPool) : "Not exported"} tone="ehp" icon="◉" source="Imported" /><FigmaStatTile label="Energy shield" value={stats.energyShield ? compactNumber(stats.energyShield) : "Not exported"} tone="energy" icon="●" source="Imported" /><FigmaStatTile label="Mana" value={stats.mana ? compactNumber(stats.mana) : "Not exported"} tone="mana" icon="◌" source="Imported" /></div><h3 className="figma-subheading">Maximum hit</h3><FigmaRows rows={defenceRows} /></FigmaPanel></div><FigmaPanel title="Imported Path of Building snapshot" eyebrow="Exact source data" className="figma-snapshot-panel"><div className="figma-snapshot-head"><div><h1>{report.mainSkill ?? report.build.identity.name}</h1><p>{[report.build.identity.ascendancy ?? report.build.identity.className, report.build.identity.level && `Level ${report.build.identity.level}`, report.build.identity.version].filter(Boolean).join("  ·  ")}</p></div><div className="figma-inline-badges"><span>EXACT IMPORTS</span><span>{report.audit.conditional} CONDITIONAL EFFECTS</span>{report.audit.unverified > 0 && <span>{report.audit.unverified} UNVERIFIED</span>}</div></div></FigmaPanel><FigmaPanel title="Build loadout" eyebrow="Imported equipment and socket groups" className="figma-loadout-panel"><BuildLoadoutPanel skillSetups={report.build.skillSetups} equippedItems={report.build.equippedItems} summary={report.sourceSummary} /></FigmaPanel></>;
 }
 
 function StaticOffenceTab({ report }: { report: Report }) {
-  const stats = report.build.importedStats;
-  activeImportedStats = stats as unknown as Record<string, unknown>;
-  const mainChannel = report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
-  return <><FigmaPanel title="Offence" eyebrow="Imported damage output" className="figma-page-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">IMPORTED SETUP</span></div><div className="figma-key-stat-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /></div><OffenceConditionSummary report={report} /></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel><OffenceTipsV2 report={report} /><RatingExplanation title="offence" rating={report.quality.offence} /></>;
+  const stats = mainSkillStats(report);
+  activeImportedStats = report.build.importedStats as unknown as Record<string, unknown>;
+  const mainChannel = report.build.damageChannels.find((channel) => channel.active && matchesSkillName(channel.skillName, report.mainSkill ?? "")) ?? report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
+  return <><FigmaPanel title="Offence" eyebrow="Imported damage output" className="figma-page-panel offence-report-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">IMPORTED SETUP</span></div><div className="figma-key-stat-grid offence-metric-grid"><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /><FigmaStatTile label="AoE Radius" value={importedNumber(stats.areaOfEffectRadius)} tone="gold" source="Imported from PoB" /></div><OffenceConditionSummary report={report} /></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel><OffenceTipsV2 report={report} /><RatingExplanation title="offence" rating={report.quality.offence} /></>;
 }
 
 function StaticDefenceTab({ report }: { report: Report }) {
   const stats = report.build.importedStats;
-  return <><FigmaPanel title="Defence" eyebrow="Imported survivability" className="figma-page-panel"><div className="figma-defence-grid"><DefenceInspector stats={stats} /><div className="figma-defence-notice"><strong>Imported defence evidence</strong><p>These values come directly from the selected PoB snapshot. Temporary skills, flasks, charges, conditional block, guard skills, charges, and other temporary effects remain labeled as review items; nothing is recalculated here.</p>{report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both").map((condition) => <div className="figma-condition-row" key={condition.id}><span>{condition.displayName}</span><b>{condition.reliability} · {condition.confidence}</b></div>)}</div></div></FigmaPanel><DefenceTipsV2 report={report} /><RatingExplanation title="defence" rating={report.quality.defence} /></>;
+  return <><FigmaPanel title="Defence" eyebrow="Imported survivability" className="figma-page-panel"><div className="figma-defence-grid"><DefenceInspector stats={stats} /><div className="figma-defence-notice evidence-panel"><div className="evidence-panel-heading"><div><span className="evidence-panel-kicker">SELECTED SNAPSHOT</span><strong>Imported defence evidence</strong></div><span className="evidence-panel-badge">READ ONLY</span></div><p>These values come directly from the selected PoB snapshot. Temporary skills, flasks, charges, conditional block, guard skills, charges, and other temporary effects remain labeled as review items; nothing is recalculated here.</p><div className="evidence-condition-list">{report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both").map((condition) => <div className="evidence-condition-card" key={condition.id}><div className="config-condition-main"><span className="figma-condition-dot" /><strong>{condition.displayName}</strong><small>{condition.reliability} · {condition.confidence}</small></div><span className="evidence-condition-state">IMPORTED</span></div>)}</div></div></div></FigmaPanel><DefenceTipsV2 report={report} /><RatingExplanation title="defence" rating={report.quality.defence} /></>;
 }
 
 function StaticConditionsTab({ report }: { report: Report }) {
@@ -458,6 +542,8 @@ function StaticConditionsTab({ report }: { report: Report }) {
 function FigmaReportView({ report: inputReport, onReset, scenarioResult, onScenarioResult, activeTab, setActiveTab }: { report: Report; onReset: () => void; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void; activeTab: ReportTab; setActiveTab: (tab: ReportTab) => void }) {
   const correctedQuality = scenarioResult ? recalculateBuildQuality(inputReport.quality, inputReport.build, inputReport.conditions.map((condition) => ({ reliability: condition.reliability })), scenarioResult) : inputReport.quality;
   const report = scenarioResult ? { ...inputReport, quality: correctedQuality } : inputReport;
+  activeMainSkillSelection = report.build.mainSkillSelection;
+  activeImportedStats = report.build.importedStats as unknown as Record<string, unknown>;
   const tabProps = { report, scenarioResult, onScenarioResult };
   return <main id="report" key={activeTab} className="figma-workbench">
     {activeTab === "overview" && <StaticOverviewTab report={report} />}
@@ -480,8 +566,7 @@ function FigmaOverviewRatingGrid({ ratings }: { ratings: BuildQuality["categoryR
     Bossing: "Rates practical single-target delivery, including uptime, ramp time, condition requirements, and whether the setup suits pinnacle bosses.",
   };
   const delivery = ratings.bossing.basis.find((item) => item.startsWith("Delivery model:"))?.replace("Delivery model: ", "").split(".")[0] ?? "Not identified";
-  const clearEvidence = ratings.clear.basis[1] ?? "No direct coverage evidence";
-  return <><div className="figma-overview-rating-grid" aria-label="Main skill ratings">{entries.map(([key, label]) => { const item = ratings[key]; return <div className="figma-overview-rating" key={key} tabIndex={0} title={explanations[label]}><span>{label}</span><strong>{item.score === null ? "?" : item.score.toFixed(1)}</strong><b>{item.grade}</b><small>{item.confidence} confidence</small>{key === "clear" && <em>{item.basis[1]}</em>}{key === "bossing" && <em>{item.basis[1]}</em>}<div className="figma-rating-tooltip" role="tooltip">{explanations[label]}</div></div>; })}</div><div className="figma-capability-rail" aria-label="Detected main build capabilities"><div><span>MAIN DELIVERY</span><strong>{delivery}</strong></div><div><span>CLEAR EVIDENCE</span><strong>{clearEvidence}</strong></div><div><span>RATING SCOPE</span><strong>Selected main setup · PoB-backed</strong></div></div></>;
+  return <><div className="figma-overview-rating-grid" aria-label="Main skill ratings">{entries.map(([key, label]) => { const item = ratings[key]; const displayLabel = label === "Clear" ? "Mapping" : label; return <div className="figma-overview-rating" key={key} tabIndex={0} title={explanations[label]}><span>{displayLabel}</span><strong>{item.score === null ? "?" : item.score.toFixed(1)}</strong><b>{item.grade}</b><small>{item.confidence} confidence</small><div className="figma-rating-tooltip" role="tooltip">{explanations[label]}</div></div>; })}</div><div className="figma-capability-rail figma-capability-rail-compact" aria-label="Detected main build archetype"><div><span>BUILD ARCHETYPE</span><strong>{delivery}</strong></div></div></>;
 }
 
 function FigmaQualityOverviewLegacy({ report }: { report: Report }) {
@@ -513,7 +598,6 @@ function FigmaQualityOverview({ report, scenarioResult = null, onCalculate }: { 
   const realityRatio = configuredValue && peakValue !== null && configuredValue > 0 ? Math.max(0, Math.min(1, peakValue / configuredValue)) : null;
   const difference = configuredValue && peakValue !== null && configuredValue > 0 ? Math.round((1 - peakValue / configuredValue) * 100) : null;
   const reviewCount = report.conditions.filter((condition) => !condition.sourceDetected || condition.reliability !== "Reliable").length;
-  const detectedCount = report.conditions.filter((condition) => condition.sourceDetected).length;
   return <FigmaPanel title="Build quality overview" eyebrow="The PoB claim versus the fight you can actually sustain" className="figma-quality-panel">
     <div className="figma-quality-grid">
       <div className="figma-quality-copy">
@@ -533,15 +617,14 @@ function FigmaQualityOverview({ report, scenarioResult = null, onCalculate }: { 
       <div className="figma-scenario-selector" role="tablist" aria-label="Combat reality scenarios">{scenarioCards.map((card) => <button type="button" role="tab" aria-selected={selectedScenario === card.key} className={`figma-scenario-card ${selectedScenario === card.key ? "active" : ""} ${card.value === null ? "unavailable" : ""}`} key={card.key} onClick={() => setSelectedScenario(card.key)}><span>{card.label}</span><strong>{card.value === null ? "-" : compactNumber(card.value)}</strong><small>{card.source}</small></button>)}</div>
       <div className="figma-selected-scenario"><div><span>SELECTED STATE</span><strong>{selected.label}</strong><p>{selected.detail}</p></div><b>{selected.value === null ? "Worker required" : compactNumber(selected.value)}</b></div>
     </div>
-    <div className="figma-reality-proof"><div><span>POB CEILING USED FOR RATING</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label} - {report.quality.ratingDps.origin.replace("worker-", "worker ")}</small></div><div><span>CONDITIONS WITH EVIDENCE</span><strong>{detectedCount}</strong><small>Source-backed effects found in the build</small></div><div><span>NEEDS REVIEW</span><strong>{reviewCount}</strong><small>Temporary, situational, ramping, or unverified dependencies</small></div></div>
+    <div className="figma-reality-proof"><div><span>POB CEILING USED FOR RATING</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>{report.quality.ratingDps.label} - {report.quality.ratingDps.origin.replace("worker-", "worker ")}</small></div><div><span>REVIEW FLAGS</span><strong>{reviewCount}</strong><small>Temporary, situational, ramping, or unverified dependencies</small></div></div>
     <div className="figma-reality-gap"><div><span>CONFIGURED CEILING</span><strong>{configuredValue === null ? "Unavailable" : compactNumber(configuredValue)}</strong></div><div className="figma-reality-track" aria-label="Configured versus highest valid DPS"><span style={{ width: realityRatio === null ? "0%" : `${realityRatio * 100}%` }} /></div><div><span>HIGHEST VALID</span><strong>{peakValue === null ? "Worker required" : compactNumber(peakValue)}</strong></div><p>{difference === null ? "Run the authoritative worker to measure how much of the configured state survives the reality check." : `The evidence-backed peak is ${difference}% below the configured PoB ceiling.`}</p></div>
-    <div className="figma-rating-source"><span>RATING SCOPE</span><strong>{report.quality.ratingDps.value === null ? "Unavailable" : compactNumber(report.quality.ratingDps.value)}</strong><small>Ratings are anchored to imported PoB output, then tempered by defence and conditional risk.</small></div>
   </FigmaPanel>;
 }
 
 function FigmaOverviewTab({ report, scenarioResult, onScenarioResult }: { report: Report; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void }) {
   const [scenarioRunRequest, setScenarioRunRequest] = useState(0);
-  const stats = report.build.importedStats;
+  const stats = mainSkillStats(report);
   const qualityStats = [
     ["Configured PoB DPS", importedDps(stats.fullDps), "damage", "⚡", "Imported"],
     ["Highest valid DPS", scenarioValue(scenarioResult, "peak"), "damage", "✕", "Worker state"],
@@ -564,8 +647,8 @@ function FigmaOverviewTab({ report, scenarioResult, onScenarioResult }: { report
 }
 
 function FigmaOffenceTab({ report, scenarioResult, onScenarioResult }: { report: Report; scenarioResult: ScenarioReport | null; onScenarioResult: (result: ScenarioReport) => void }) {
-  const stats = report.build.importedStats;
-  const mainChannel = report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
+  const stats = mainSkillStats(report);
+  const mainChannel = report.build.damageChannels.find((channel) => channel.active && matchesSkillName(channel.skillName, report.mainSkill ?? "")) ?? report.build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? report.build.damageChannels.find((channel) => channel.active);
   const offenceConditions = report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both");
   const conditionColumns = [offenceConditions.filter((_, index) => index % 2 === 0), offenceConditions.filter((_, index) => index % 2 === 1)];
   return <><FigmaPanel title="Offence" eyebrow="Damage output" className="figma-page-panel"><div className="figma-active-skill"><span>ACTIVE SKILL</span><strong>{mainChannel?.label ?? report.mainSkill ?? "Main skill not identified"}</strong><span className="figma-status-badge">{mainChannel ? "IMPORTED SETUP" : "UNAVAILABLE"}</span></div><FigmaStatTile label="Configured PoB DPS" value={importedDps(stats.fullDps)} tone="damage" icon="⚡" source="Exact imported snapshot" /><FigmaStatTile label="Hit DPS" value={importedDps(stats.totalDps)} tone="damage" icon="✦" source="Exact imported TotalDPS" /><FigmaStatTile label="Average hit" value={importedDps(stats.averageHit)} tone="gold" icon="◌" source="Imported AverageHit" /><FigmaStatTile label="Attack / cast speed" value={importedDps(stats.speed)} tone="gold" icon="↯" source="Imported PoB speed" /><h3 className="figma-subheading">Damage conditions</h3><div className="figma-offence-condition-columns">{conditionColumns.map((items, index) => <ConditionTable key={index} title="" items={items} />)}</div></FigmaPanel><FigmaPanel title="Skill setups" eyebrow="Imported socket groups" className="figma-page-panel"><SkillSetupPanel setups={report.build.skillSetups} /></FigmaPanel><FigmaPanel title="Damage channels" eyebrow="Supported active skills" className="figma-page-panel"><DamageChannelPanel xml={report.build.rawXml} channels={report.build.damageChannels} /></FigmaPanel><FigmaPanel title="Scenario lab" eyebrow="Recalculate a selected state" className="figma-page-panel"><ScenarioPanelV2 xml={report.build.rawXml} stats={stats} channels={report.build.damageChannels} onResult={onScenarioResult} /></FigmaPanel><span className="sr-only">Scenario result loaded: {scenarioResult ? "yes" : "not yet"}</span></>;
@@ -593,10 +676,9 @@ function ModernReportView({ report: inputReport, onReset, scenarioResult, onScen
   const correctedQuality = scenarioResult ? recalculateBuildQuality(inputReport.quality, inputReport.build, inputReport.conditions.map((condition) => ({ reliability: condition.reliability })), scenarioResult) : inputReport.quality;
   const report = scenarioResult ? { ...inputReport, quality: correctedQuality } : inputReport;
   const stats = report.build.importedStats;
-  const normalizedMainSkill = (report.build.mainSkill ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const mainSetup = report.build.skillSetups.find((setup) => setup.includeInFullDPS) ?? report.build.skillSetups.find((setup) => setup.gems.some((gem) => (gem.displayName ?? gem.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill)) ?? report.build.skillSetups.find((setup) => setup.mainActiveSkill) ?? report.build.skillSetups[0];
+  const mainSetup = report.build.skillSetups.find((setup) => setup.gems.some((gem) => matchesSkillName(gem.name, report.build.mainSkill ?? report.mainSkill ?? "") || matchesSkillName(gem.displayName ?? "", report.build.mainSkill ?? report.mainSkill ?? ""))) ?? report.build.skillSetups.find((setup) => setup.includeInFullDPS || setup.mainActiveSkill) ?? report.build.skillSetups[0];
   const damageGems = mainSetup?.gems.filter((gem) => gem.enabled && !gem.support && !gem.provided && !gem.trigger) ?? [];
-  const mainSkill = damageGems.find((gem) => normalizedMainSkill && (gem.displayName ?? gem.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill) ?? damageGems[0];
+  const mainSkill = damageGems.find((gem) => matchesSkillName(gem.name, report.build.mainSkill ?? report.mainSkill ?? "") || matchesSkillName(gem.displayName ?? "", report.build.mainSkill ?? report.mainSkill ?? "")) ?? damageGems[0];
   const mainSkillLabel = mainSkill?.name ?? mainSkill?.displayName ?? report.build.mainSkill ?? report.build.identity.name;
   const offenceConditions = report.conditions.filter((condition) => condition.category === "offence" || condition.category === "both");
   const defenceConditions = report.conditions.filter((condition) => condition.category === "defence" || condition.category === "both");
@@ -621,7 +703,7 @@ function ModernReportView({ report: inputReport, onReset, scenarioResult, onScen
 
     <div className="report-workbench">
       <div className="report-main-column">
-        <section className="tool-panel damage-panel"><div className="tool-panel-heading"><div><p className="eyebrow">Damage output</p><h3>Offence</h3><p>Configured PoB values first; scenario values appear after the isolated worker recalculates the build.</p></div><span className="panel-mark panel-mark-damage">DAMAGE</span></div><ImportedStatsPanel title="PoB damage snapshot" description="These are exported values, not a claim about sustained gameplay." stats={stats} kind="offence" /><DamageChannelPanel xml={report.build.rawXml} channels={report.build.damageChannels} /><ScenarioPanelV2 xml={report.build.rawXml} stats={stats} channels={report.build.damageChannels} onResult={onScenarioResult} /><SkillLab xml={report.build.rawXml} setups={report.build.skillSetups} channels={report.build.damageChannels} /><ConditionTable title="Damage conditions" items={offenceConditions} /></section>
+        <section className="tool-panel damage-panel"><div className="tool-panel-heading"><div><p className="eyebrow">Damage output</p><h3>Offence</h3><p>Configured PoB values first; scenario values appear after the isolated worker recalculates the build.</p></div><span className="panel-mark panel-mark-damage">DAMAGE</span></div><ImportedStatsPanel title="PoB damage snapshot" description="These are exported values, not a claim about sustained gameplay." stats={stats} kind="offence" /><DamageChannelPanel xml={report.build.rawXml} channels={report.build.damageChannels} /><ScenarioPanelV2 xml={report.build.rawXml} stats={stats} channels={report.build.damageChannels} mainSkill={report.mainSkill ?? report.build.mainSkill} onResult={onScenarioResult} /><SkillLab xml={report.build.rawXml} setups={report.build.skillSetups} channels={report.build.damageChannels} mainSkill={report.mainSkill ?? report.build.mainSkill} /><ConditionTable title="Damage conditions" items={offenceConditions} /></section>
         <section className="tool-panel defence-panel"><div className="tool-panel-heading"><div><p className="eyebrow">Survivability</p><h3>Defence</h3><p>Only non-zero imported stats are shown. Temporary effects remain visible as conditions rather than being treated as permanent power.</p></div><span className="panel-mark panel-mark-defence">SURVIVE</span></div><DefenceInspector stats={stats} /><ConditionTable title="Defensive conditions" items={defenceConditions} /></section>
       </div>
       <aside className="report-side-column"><AnalysisRail report={report} /><PoeNinjaComparisonPanel /></aside>
@@ -720,7 +802,7 @@ function ImportedStatsPanel({ title, description, stats, kind }: { title: string
   if (kind === "defence" && !hasUniformElementalMaximumHit(stats)) stats = { ...stats, elementalMaximumHit: undefined };
   type StatRow = { label: string; value: unknown; kind: "dps" | "value" | "percent" | "rate"; note: string };
   const allValues: StatRow[] = kind === "offence"
-    ? [{ label: "Full PoB DPS", value: stats.fullDps, kind: "dps", note: "Imported FullDPS" }, { label: "Hit DPS", value: stats.totalDps, kind: "dps", note: "Imported TotalDPS" }, { label: "Damage-over-Time DPS", value: stats.totalDotDps, kind: "dps", note: "Imported TotalDotDPS" }, { label: "Combined DPS", value: stats.combinedDps, kind: "dps", note: "Imported CombinedDPS" }, { label: "Average hit", value: stats.averageHit, kind: "dps", note: "Imported AverageHit" }, { label: "Attack/Cast speed", value: stats.speed, kind: "rate", note: "PoB Speed: attack/cast speed" }]
+    ? [{ label: "Full PoB DPS", value: stats.fullDps, kind: "dps", note: "Imported FullDPS" }, { label: "Hit DPS", value: stats.totalDps, kind: "dps", note: "Imported TotalDPS" }, { label: "Damage-over-Time DPS", value: stats.totalDotDps, kind: "dps", note: "Imported TotalDotDPS" }, { label: "Combined DPS", value: stats.combinedDps, kind: "dps", note: "Imported CombinedDPS" }, { label: "Average hit", value: stats.averageHit, kind: "dps", note: "Imported AverageHit" }, { label: "Attack/Cast speed", value: stats.speed, kind: "rate", note: "PoB Speed: attack/cast speed" }, { label: "AoE Radius", value: stats.areaOfEffectRadius, kind: "value", note: "Imported AreaOfEffectRadius" }]
     : [
       { label: "Life", value: stats.life, kind: "value", note: "Imported Life" },
       { label: "Energy Shield", value: stats.energyShield, kind: "value", note: "Imported EnergyShield" },
@@ -887,7 +969,7 @@ function LegacyEquipmentCard({ item }: { item: EquippedItem }) {
 
 function ConditionGroup({ title, items }: { title: string; items: Condition[] }) { return <div className="condition-group">{title && <h3>{title}</h3>}{items.length ? items.map(c => <details className="condition" key={c.id}><summary><span><span className="condition-name">{c.displayName}</span><span className="condition-sub">{c.sourceDetected ? "Source evidence found" : "Source unverified"}</span></span><span className={`tag ${c.sourceDetected ? "tag-good" : "tag-unknown"}`}>{c.reliability} · {c.confidence}</span></summary><p>{c.explanation}</p><p className="requirement"><strong>Requires:</strong> {c.activationRequirement}</p><p className="requirement"><strong>Affects:</strong> {c.statsAffected.join(", ")}</p><div className="evidence-list">{c.evidence.map((e, index) => <div className="evidence" key={`${e.label}-${index}`}><span>{e.kind}</span><div><strong>{e.label}</strong><small>{e.detail}</small></div></div>)}</div></details>) : <p className="muted">No configured conditions detected in this category.</p>}</div>; }
 
-function ScenarioPanelV2({ xml, stats, channels = [], onResult, runRequest = 0, disabledAutomatic: controlledDisabledAutomatic, onDisabledAutomaticChange }: { xml: string; stats: Stats; channels?: DamageChannel[]; onResult?: (result: ScenarioReport) => void; runRequest?: number; disabledAutomatic?: string[]; onDisabledAutomaticChange?: (ids: string[]) => void }) {
+function ScenarioPanelV2({ xml, stats, channels = [], mainSkill, onResult, runRequest = 0, disabledAutomatic: controlledDisabledAutomatic, onDisabledAutomaticChange }: { xml: string; stats: Stats; channels?: DamageChannel[]; mainSkill?: string; onResult?: (result: ScenarioReport) => void; runRequest?: number; disabledAutomatic?: string[]; onDisabledAutomaticChange?: (ids: string[]) => void }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [error, setError] = useState("");
@@ -912,14 +994,16 @@ function ScenarioPanelV2({ xml, stats, channels = [], onResult, runRequest = 0, 
   const run = useCallback(async (nextDisabled = disabledAutomatic) => {
     setLoading(true); setError("");
     try {
-      const scenarioOverrides = { ...(skillPart ? { skillPartCalcs: Number(skillPart) } : {}), ...(totemsSummoned ? { TotemsSummoned: Number(totemsSummoned) } : {}) };
+      const effectiveMainSkill = mainSkill ?? channels.find((channel) => channel.active && channel.includeInFullDPS)?.skillName;
+      const selectedChannel = channels.find((channel) => channel.active && matchesSkillName(channel.skillName, effectiveMainSkill ?? ""));
+      const scenarioOverrides = { ...(effectiveMainSkill ? { skillName: effectiveMainSkill, ...(selectedChannel?.engineIndex ? { skillGroupIndex: selectedChannel.engineIndex } : {}) } : {}), ...(skillPart ? { skillPartCalcs: Number(skillPart) } : {}), ...(totemsSummoned ? { TotemsSummoned: Number(totemsSummoned) } : {}) };
       const response = await fetch("/api/scenarios", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ xml, encounterSeconds, disabledAutomatic: nextDisabled, scenario: scenarioOverrides }) });
       const body = await response.json();
       if (!response.ok) { if (body.engine) setEngineStatus(body.engine as EngineStatus); throw new Error(body.error); }
       setResult(body); onResultRef.current?.(body as ScenarioReport); setEngineStatus({ state: "ready", message: "The isolated Path of Building worker is ready." });
     } catch (e) { setError(e instanceof Error ? e.message : "Scenario calculation unavailable."); }
     finally { setLoading(false); }
-  }, [disabledAutomatic, encounterSeconds, skillPart, totemsSummoned, xml]);
+  }, [channels, disabledAutomatic, encounterSeconds, mainSkill, skillPart, totemsSummoned, xml]);
   useEffect(() => {
     if (runRequest <= 0) return;
     const timer = window.setTimeout(() => void run(), 0);
@@ -955,11 +1039,11 @@ type SkillLabResult = {
   diagnostics: string[];
 };
 
-function SkillLab({ xml, setups, channels }: { xml: string; setups: SkillSetup[]; channels: DamageChannel[] }) {
+function SkillLab({ xml, setups, channels, mainSkill }: { xml: string; setups: SkillSetup[]; channels: DamageChannel[]; mainSkill?: string }) {
   const selectable = setups.flatMap((setup) => setup.gems
     .filter((gem) => gem.enabled && !gem.support)
     .map((gem) => ({ setup, gem })));
-  const main = selectable.find(({ setup }) => setup.includeInFullDPS) ?? selectable[0];
+  const main = selectable.find(({ setup, gem }) => (mainSkill && (matchesSkillName(gem.name, mainSkill) || matchesSkillName(gem.displayName ?? "", mainSkill))) || channels.some((channel) => channel.active && channel.includeInFullDPS && channel.setupId === setup.id && matchesSkillName(channel.skillName, gem.name))) ?? selectable.find(({ setup }) => setup.includeInFullDPS) ?? selectable[0];
   const [selected, setSelected] = useState(main ? `${main.setup.engineIndex ?? main.setup.id}:${main.gem.name}` : "");
   const [result, setResult] = useState<SkillLabResult | null>(null);
   const [loading, setLoading] = useState(false);

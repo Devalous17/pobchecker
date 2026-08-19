@@ -1,7 +1,8 @@
 import type { NormalizedBuild, SourceAsset } from "@/src/types/domain";
 import { refreshDamageSkillIdentity } from "./parse";
+import localRegistry from "@/data/pob-gems.json";
 
-type GemMetadata = { color: SourceAsset["attributeColor"]; tags: string[]; requirements: string };
+type GemMetadata = { color: SourceAsset["attributeColor"]; tags: string[]; requirements: string; delivery?: string; damageModel?: string; isSupport?: boolean };
 const cache = new Map<string, Map<string, GemMetadata>>();
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 const escapeLua = (value: string) => value.replace(/\\"/g, '"');
@@ -29,10 +30,20 @@ function parseGemData(lua: string): Map<string, GemMetadata> {
   return result;
 }
 
+const localGemMetadata = new Map<string, GemMetadata>(localRegistry.records.flatMap((record) => record.aliases.map((alias) => [alias, {
+  color: record.tags.includes("intelligence") && record.tags.includes("strength") || record.tags.includes("intelligence") && record.tags.includes("dexterity") || record.tags.includes("strength") && record.tags.includes("dexterity") ? "hybrid" : record.tags.includes("intelligence") ? "int" : record.tags.includes("dexterity") ? "dex" : record.tags.includes("strength") ? "str" : "unknown",
+  tags: record.tags,
+  requirements: "PoB local registry",
+  delivery: record.delivery,
+  damageModel: record.damageModel,
+  isSupport: record.isSupport,
+} satisfies GemMetadata] as const)));
+
 export async function enrichPoBGemMetadata(build: NormalizedBuild): Promise<NormalizedBuild> {
   const url = process.env.POB_GEM_DATA_URL ?? "https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/dev/src/Data/Gems.lua";
   try {
-    let metadata = cache.get(url);
+    let metadata: Map<string, GemMetadata> = localGemMetadata;
+    if (!metadata.size) metadata = cache.get(url) ?? new Map<string, GemMetadata>();
     if (!metadata) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -46,12 +57,15 @@ export async function enrichPoBGemMetadata(build: NormalizedBuild): Promise<Norm
     const apply = (gem: typeof build.skillSetups[number]["gems"][number]) => {
       const match = metadata?.get(normalize(gem.name)) ?? metadata?.get(normalize(gem.displayName ?? ""));
       if (!match) return gem;
-      return { ...gem, attributeColor: match.color === "unknown" ? gem.attributeColor : match.color, metadataSource: "pob" as const, tags: match.tags, detail: `${gem.detail} · PoB tags: ${match.tags.filter((tag) => !/^grants_/.test(tag)).join(", ") || "none"} · ${match.requirements}` };
+      return { ...gem, attributeColor: match.color === "unknown" ? gem.attributeColor : match.color, metadataSource: "pob" as const, tags: match.tags, detail: `${gem.detail} · PoB tags: ${match.tags.filter((tag) => !/^grants_/.test(tag)).join(", ") || "none"} · ${match.delivery ? `Delivery: ${match.delivery} · ` : ""}${match.requirements}` };
     };
     const skillSetups = build.skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map(apply) }));
     const gemByName = new Map(skillSetups.flatMap((setup) => setup.gems.map((gem) => [normalize(gem.name), gem])));
     const sourceAssets = build.sourceAssets.map((asset) => { if (asset.category !== "gem") return asset; const gem = gemByName.get(normalize(asset.name)); return gem ? { ...asset, attributeColor: gem.attributeColor, detail: gem.detail } : asset; });
-    const metadataAwareSkillSetups = skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map((gem) => ({ ...gem, support: gem.support || (gem.tags ?? []).some((tag) => tag.toLowerCase() === "support") })) }));
+    const metadataAwareSkillSetups = skillSetups.map((setup) => ({ ...setup, gems: setup.gems.map((gem) => {
+      const matchedMetadata = metadata.get(normalize(gem.name)) ?? metadata.get(normalize(gem.displayName ?? ""));
+      return { ...gem, support: gem.support || matchedMetadata?.isSupport === true || (gem.tags ?? []).some((tag) => tag.toLowerCase() === "support"), delivery: matchedMetadata?.delivery, damageModel: matchedMetadata?.damageModel };
+    }) }));
     return refreshDamageSkillIdentity({ ...build, skillSetups: metadataAwareSkillSetups, sourceAssets });
   } catch { return build; }
 }

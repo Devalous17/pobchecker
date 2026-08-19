@@ -61,6 +61,9 @@ local function selectImportedFullDpsGroup()
   local function selectGroup(index)
     local socketGroup = build.skillsTab.socketGroupList[index]
     if not socketGroup or not socketGroup.enabled then return nil end
+    for _, group in ipairs(build.skillsTab.socketGroupList) do
+      group.includeInFullDPS = false
+    end
     build.mainSocketGroup = index
     socketGroup.includeInFullDPS = true
     build.calcsTab.input.skill_number = index
@@ -108,7 +111,10 @@ end
 -- every calculation remains authoritative to the imported build data.
 local function selectSkillByName(skillName, skillGroupIndex)
   if type(skillName) ~= "string" or skillName == "" or not build.skillsTab or not build.skillsTab.socketGroupList or not build.calcsTab then return nil end
-  local wanted = string.lower(skillName)
+  local function normalizeName(value)
+    return string.lower(value or ""):gsub("[^%w]", "")
+  end
+  local wanted = normalizeName(skillName)
   local firstIndex = tonumber(skillGroupIndex)
   local function inspect(index, socketGroup)
     if not socketGroup or not socketGroup.enabled then return nil end
@@ -117,8 +123,11 @@ local function selectSkillByName(skillName, skillGroupIndex)
       local grantedEffect = gem.grantedEffect or (gem.gemData and gem.gemData.grantedEffect)
       if grantedEffect and not grantedEffect.support then
         activeSkillNumber = activeSkillNumber + 1
-        local candidate = string.lower(gem.nameSpec or gem.name or "")
+        local candidate = normalizeName(gem.nameSpec or gem.name or "")
         if candidate == wanted then
+          for _, group in ipairs(build.skillsTab.socketGroupList) do
+            group.includeInFullDPS = false
+          end
           build.mainSocketGroup = index
           socketGroup.includeInFullDPS = true
           build.calcsTab.input.skill_number = index
@@ -190,7 +199,7 @@ end
 local function calculate(request)
   if type(request.xml) ~= "string" or #request.xml < 1 or #request.xml > 2000000 then error("invalid XML size") end
   loadBuildFromXML(request.xml, "PoB Reality Check")
-  local selectedFullDpsIndex, selectedFullDpsGroup = selectImportedFullDpsGroup()
+  local selectedFullDpsIndex, selectedFullDpsGroup
   local selectedSkillName
   if request.scenario and request.scenario.skillName then
     local selectedIndex, selectedLabel, gemName = selectSkillByName(request.scenario.skillName, request.scenario.skillGroupIndex)
@@ -199,6 +208,8 @@ local function calculate(request)
       selectedFullDpsGroup = selectedLabel
       selectedSkillName = gemName
     end
+  else
+    selectedFullDpsIndex, selectedFullDpsGroup = selectImportedFullDpsGroup()
   end
   local configSet = build.configTab and build.configTab.configSets and build.configTab.configSets[build.configTab.activeConfigSetId]
   local inputs = configSet and configSet.input or {}
@@ -224,6 +235,17 @@ local function calculate(request)
   if not build.calcsTab then error("PoB calculation tab did not initialise") end
   build.calcsTab:BuildOutput()
   local output = build.calcsTab.mainOutput or {}
+  -- Report the skill PoB actually put into the calculation environment. The
+  -- requested name is not sufficient evidence: if a selector is ignored or
+  -- clamped, echoing the request would make a stale setup look authoritative.
+  local calculatedSelectedSkill
+  local calculatedEnv = build.calcsTab.mainEnv or build.calcsTab.calcsEnv
+  local calculatedMainSkill = calculatedEnv and calculatedEnv.player and calculatedEnv.player.mainSkill
+  local calculatedEffect = calculatedMainSkill and calculatedMainSkill.activeEffect
+  local calculatedGrantedEffect = calculatedEffect and calculatedEffect.grantedEffect
+  if calculatedGrantedEffect and calculatedGrantedEffect.name then
+    calculatedSelectedSkill = calculatedGrantedEffect.name
+  end
   local fireMaximumHit = outputNumber(output, "FireMaximumHitTaken")
   local coldMaximumHit = outputNumber(output, "ColdMaximumHitTaken")
   local lightningMaximumHit = outputNumber(output, "LightningMaximumHitTaken")
@@ -254,7 +276,10 @@ local function calculate(request)
     table.insert(diagnostics, "No Full DPS or imported main socket group was found; PoB's imported skill selection was retained.")
   end
   if selectedSkillName then
-    table.insert(diagnostics, "Selected active gem: " .. selectedSkillName)
+    table.insert(diagnostics, "Requested active gem: " .. selectedSkillName)
+  end
+  if calculatedSelectedSkill then
+    table.insert(diagnostics, "Calculated active gem: " .. calculatedSelectedSkill)
   end
   if selectedSkillPartGem then
     table.insert(diagnostics, "Selected skill part " .. tostring(request.scenario.skillPartCalcs) .. " for " .. selectedSkillPartGem)
@@ -263,6 +288,7 @@ local function calculate(request)
     engine = { name = "Path of Building Community", version = tostring(build.xmlVersion or "unknown"), commit = os.getenv("POB_COMMIT") or "pinned" },
     calculated = true,
     scenario = request.scenario or {},
+    selectedSkill = calculatedSelectedSkill,
     offence = { fullDPS = numberOrNil(output.FullDPS), combinedDPS = numberOrNil(output.CombinedDPS), totalDPS = numberOrNil(output.TotalDPS), totalDot = numberOrNil(output.TotalDotDPS or output.TotalDot), averageDamage = numberOrNil(output.AverageDamage), speed = numberOrNil(output.Speed), attackSpeed = numberOrNil(output.AttackSpeed), castSpeed = numberOrNil(output.CastSpeed) },
     minion = hasMinionOutput and minion or nil,
     defence = {

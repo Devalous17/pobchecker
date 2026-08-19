@@ -3,6 +3,7 @@ import type { ScenarioReport } from "@/src/features/scenarios/model";
 import { inferSkillCapabilities } from "./capabilities";
 import type { CapabilityBuild } from "./capabilities";
 import { benchmarkDpsScore, benchmarkRecordCount, benchmarkSummary } from "./benchmark";
+import { evaluateContentCoverage } from "./content";
 
 const gradeFor = (score: number): QualityGrade => score >= 9 ? "S" : score >= 8 ? "A" : score >= 7 ? "B" : score >= 6 ? "C" : score >= 5 ? "D" : score >= 3 ? "E" : "F";
 const labelFor = (score: number) => score >= 9 ? "Exceptional" : score >= 8 ? "Very strong" : score >= 7 ? "Strong" : score >= 6 ? "Functional" : score >= 5 ? "Needs improvement" : score >= 3 ? "Fragile" : "Critical gaps";
@@ -25,7 +26,13 @@ const calibrationBasis = `Absolute DPS calibration: ${DPS_CALIBRATION_ANCHORS.sl
 
 const benchmarkBasis = `Peer calibration: ${benchmarkSummary}. Absolute DPS remains dominant; peer context supplies a 12% adjustment.`;
 
-const dotStrengthScore = (dps: number) => Math.max(1, Math.min(10, 4 + (Math.log10(dps) - Math.log10(1_000_000)) * 2.3));
+// DoT has a practical ceiling in PoB-style evaluations: once a build reaches
+// the high tens of millions of sustained RF/ignite/bleed/poison DPS, more
+// tooltip damage is increasingly rare and does not scale like ordinary hit
+// DPS. Keep the lower bands useful, but recognize near-cap DoT as elite.
+const dotStrengthScore = (dps: number) => Math.max(1, Math.min(10, dps >= 100_000_000 ? 10 : 4.8 + (Math.log10(dps) - Math.log10(1_000_000)) * 2.5));
+
+const eliteDamageScore = (dps: number, dotDps?: number | null) => dps >= 1_000_000_000 || (typeof dotDps === "number" && dotDps >= 100_000_000);
 
 function calibratedDpsStrengthScore(dps: number, delivery: ReturnType<typeof inferSkillCapabilities>["delivery"]) {
   const absoluteScore = dpsStrengthScore(dps);
@@ -33,33 +40,63 @@ function calibratedDpsStrengthScore(dps: number, delivery: ReturnType<typeof inf
   return { score: Math.max(1, Math.min(10, absoluteScore * 0.88 + peer.score * 0.12)), absoluteScore, peerScore: peer.score, peerCount: peer.profile.count };
 }
 
-type RatingDpsStats = { fullDps?: number; combinedDps?: number; totalDotDps?: number; totalDps?: number; speed?: number };
+type RatingDpsStats = { fullDps?: number; combinedDps?: number; totalDotDps?: number; totalDps?: number; speed?: number; movementSpeed?: number };
+
+const meaningfulOffenceDps = (stats: RatingDpsStats): { value: number | null; label: string; basis: string } => {
+  const hit = positive(stats.totalDps) ? stats.totalDps : null;
+  const dot = positive(stats.totalDotDps) ? stats.totalDotDps : null;
+  // Prefer the actual damage type that carries the build. A small DoT trace
+  // should not displace a much larger hit profile, but a DoT-first build must
+  // not be graded against hit-DPS anchors just because TotalDPS is present.
+  if (dot !== null && (hit === null || dot > hit * 1.1)) return { value: dot, label: "PoB Damage-over-Time DPS", basis: hit === null ? "No positive Hit DPS was exported, so DoT DPS is authoritative." : `DoT DPS is ${Math.round(dot / hit)}x the Hit DPS; the higher meaningful damage channel is authoritative.` };
+  if (positive(stats.fullDps)) return { value: stats.fullDps, label: "Full PoB DPS", basis: dot === null ? "No dominant DoT channel was exported; configured Full DPS is authoritative, including valid multi-source delivery such as totems or ballistas." : `Hit DPS is at least 90% of DoT DPS; configured Full DPS is authoritative for the hit-based delivery setup.` };
+  if (positive(stats.combinedDps)) return { value: stats.combinedDps, label: "Combined PoB DPS", basis: "No positive Full DPS was exported; the combined aggregate is used before falling back to a single hit channel." };
+  if (hit !== null) return { value: hit, label: "PoB Hit DPS", basis: dot === null ? "No configured Full DPS or combined aggregate was exported, so Hit DPS is authoritative." : `Hit DPS is at least 90% of DoT DPS; the hit profile is authoritative because no configured aggregate was exported.` };
+  const fallback = [
+    ["Full PoB DPS", stats.fullDps],
+    ["Combined PoB DPS", stats.combinedDps],
+  ].find(([, value]) => positive(value));
+  return fallback && positive(fallback[1]) ? { value: fallback[1], label: String(fallback[0]), basis: "No separate positive hit or DoT channel was exported; the aggregate PoB value is used as a fallback." } : { value: null, label: "No aggregate PoB DPS", basis: "The export did not contain a positive damage value." };
+};
 
 function offenceContext(build: CapabilityBuild & { importedStats?: RatingDpsStats }) {
   const capabilities = inferSkillCapabilities(build);
   const coverage = capabilities.coverageSignals;
+  const clearSignals = capabilities.clearSignals;
   const dotEvidence = coverage.some((signal) => /damage-over-time/i.test(signal)) || positive(build.importedStats?.totalDotDps);
-  const mappingSignals = coverage.filter((signal) => /coverage|spread|multiple-source/i.test(signal)).length;
+  const mappingSignals = coverage.filter((signal) => /coverage|spread|multiple-source/i.test(signal)).length + clearSignals.length;
   const clearBonus = Math.min(4.2, mappingSignals * 0.85 + (dotEvidence ? 0.55 : 0));
   const offenceBonus = Math.min(1.25, mappingSignals * 0.22 + (dotEvidence ? 0.35 : 0));
   const dotDps = build.importedStats?.totalDotDps;
-  const directDps = [build.importedStats?.fullDps, build.importedStats?.combinedDps, build.importedStats?.totalDps].find(positive);
-  const dotScore = positive(dotDps) && !positive(directDps) ? dotStrengthScore(dotDps) : null;
+  const directDps = positive(build.importedStats?.totalDps) ? build.importedStats.totalDps : undefined;
+  const dotScore = positive(dotDps) && (directDps === undefined || dotDps > directDps * 1.1) ? dotStrengthScore(dotDps) : null;
   return { capabilities, dotEvidence, clearBonus, offenceBonus, dotScore, dotDps, directDps };
 }
 
 const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 
-export function importedRatingDps(build: { importedStats: RatingDpsStats }): RatingDpsEvidence {
-  const candidates: Array<[string, unknown]> = [
-    ["Full PoB DPS", build.importedStats.fullDps],
-    ["Combined PoB DPS", build.importedStats.combinedDps],
-    ["PoB Damage-over-Time DPS", build.importedStats.totalDotDps],
-    ["PoB Hit DPS fallback", build.importedStats.totalDps],
-  ];
-  const selected = candidates.find(([, value]) => positive(value));
-  return selected
-    ? { value: selected[1] as number, label: selected[0], origin: "imported", explanation: "This exported aggregate value is the primary DPS source for the initial rating.", differencePercent: 0, verification: "not-run" }
+export function importedRatingDps(build: { importedStats: RatingDpsStats; mainSkillSelection?: { method?: string; selectedSkill?: string; selectedDps?: number } }): RatingDpsEvidence {
+  if (build.mainSkillSelection) {
+    if (build.mainSkillSelection.method === "pob-marker") {
+      const selectedSkill = build.mainSkillSelection.selectedSkill ?? "selected main skill";
+      const imported = meaningfulOffenceDps(build.importedStats);
+      if (imported.value !== null) {
+        return { value: imported.value, label: `${imported.label} · ${selectedSkill}`, origin: "imported", explanation: `${imported.basis} The report rates the skill identified by PoB as ${selectedSkill}; multiple linked or active setups remain a configuration warning, not a reason to discard this imported result.`, differencePercent: 0, verification: "not-run" };
+      }
+      return { value: null, label: `No positive DPS · ${selectedSkill}`, origin: "unavailable", explanation: `The report identified ${selectedSkill}, but PoB exported no positive Full, Hit, DoT, or Combined DPS channel for that state. The offence grade uses a conservative floor and the configuration warning explains how to correct the export.`, differencePercent: 0, verification: "not-run" };
+    }
+    if (positive(build.mainSkillSelection.selectedDps)) {
+      const selectedSkill = build.mainSkillSelection.selectedSkill ?? "selected main skill";
+      return { value: build.mainSkillSelection.selectedDps, label: `${selectedSkill} DPS`, origin: "worker-configured", explanation: `The isolated PoB worker calculated ${selectedSkill}; the rating follows that selected-skill result instead of the stale imported snapshot channel.`, differencePercent: 0, verification: "not-run" };
+    }
+    const imported = meaningfulOffenceDps(build.importedStats);
+    return imported.value !== null
+      ? { value: imported.value, label: `${imported.label} · imported snapshot`, origin: "imported", explanation: `The importer identified ${build.mainSkillSelection.selectedSkill ?? "a main skill"}, but the worker did not return a selected-skill DPS value. The exported PoB snapshot remains visible as imported evidence and is not relabeled as the selected skill.`, differencePercent: 0, verification: "not-run" }
+      : { value: null, label: "No imported DPS", origin: "unavailable", explanation: `The importer identified ${build.mainSkillSelection.selectedSkill ?? "a main skill"}, but neither the worker nor the PoB snapshot provided a positive DPS value.`, differencePercent: 0, verification: "not-run" };
+  }
+  const selected = meaningfulOffenceDps(build.importedStats);
+  return selected.value !== null
+    ? { value: selected.value, label: selected.label, origin: "imported", explanation: `${selected.basis} The rating follows this channel instead of blindly preferring Full DPS.`, differencePercent: 0, verification: "not-run" }
     : { value: null, label: "No aggregate PoB DPS", origin: "unavailable", explanation: "The export did not contain a positive aggregate damage value.", differencePercent: 0, verification: "not-run" };
 }
 
@@ -68,13 +105,14 @@ export function scenarioOffenceRating(dps: number | null | undefined, build: Cap
   const context = offenceContext(build);
   const capabilities = context.capabilities;
   const calibration = calibratedDpsStrengthScore(dps, capabilities.delivery);
-  const base = Math.min(10, (context.dotScore ?? calibration.score) * 0.9 + context.offenceBonus);
+  const strength = context.dotScore ?? calibration.score;
+  const base = eliteDamageScore(dps, context.dotDps) ? 10 : Math.min(10, strength + context.offenceBonus);
   const unverified = conditions.filter((condition) => condition.reliability === "Unverified").length;
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const conditional = conditions.filter((condition) => ["Conditional", "Temporary", "Situational", "Ramp-dependent"].includes(condition.reliability)).length;
-  const specialDelivery = capabilities.delivery === "totem/ballista" || capabilities.delivery === "minion/summon" || capabilities.delivery === "trap" || capabilities.delivery === "mine" || capabilities.delivery === "brand";
+  const specialDelivery = !["self-cast/attack", "ailment/DoT", "unknown"].includes(capabilities.delivery);
   const confidence: Confidence = unverified || specialDelivery ? "Low" : "Medium";
-  const basis = [`Worker-recalculated corrected DPS: ${dps.toLocaleString()}.`, `Corrected output strength: ${round1(base)}/10.`, context.dotScore !== null ? `DoT calibration: ${context.dotDps!.toLocaleString()} DoT DPS maps to ${round1(context.dotScore)}/10 on a practical 36m ceiling.` : calibrationBasis, benchmarkBasis, `Peer score for ${capabilities.delivery}: ${round1(calibration.peerScore)}/10 across ${calibration.peerCount} builds.`, `Main delivery model: ${capabilities.delivery}.`];
+  const basis = [`Worker-recalculated corrected DPS: ${dps.toLocaleString()}.`, `Corrected output strength: ${round1(base)}/10.`, eliteDamageScore(dps, context.dotDps) ? "Elite damage threshold reached: billion-scale hit DPS or 100m+ sustained DoT is allowed to reach the 10/10 offence ceiling." : context.dotScore !== null ? `DoT calibration: ${context.dotDps!.toLocaleString()} DoT DPS maps to ${round1(context.dotScore)}/10 on a practical 36m ceiling.` : calibrationBasis, benchmarkBasis, `Peer score for ${capabilities.delivery}: ${round1(calibration.peerScore)}/10 across ${calibration.peerCount} builds.`, `Main delivery model: ${capabilities.delivery}.`];
   if (conditional) basis.push(`${conditional} conditional or temporary effect(s) remain visible as assumptions; they reduce confidence, not the raw PoB damage score.`);
   if (unverified) basis.push(`${unverified} unverified condition(s) remain visible and lower confidence until a source is confirmed.`);
   if (mappingOnly) basis.push(`${mappingOnly} mapping-only condition(s) remain visible and are not treated as universal boss evidence.`);
@@ -90,15 +128,32 @@ export function buildOverviewRatings(build: CapabilityBuild & { importedStats: R
   const capabilities = context.capabilities;
   const coverageEvidence = capabilities.coverageSignals.length > 0;
   const speed = typeof build.importedStats.speed === "number" && Number.isFinite(build.importedStats.speed) ? build.importedStats.speed : 0;
+  const importedMovement = typeof build.importedStats.movementSpeed === "number" && Number.isFinite(build.importedStats.movementSpeed) ? build.importedStats.movementSpeed : 0;
+  // PoB exports EffectiveMovementSpeedMod as a multiplier (2.57 means 257%),
+  // while some exports provide a direct percentage.
+  const movementSpeed = importedMovement > 0 && importedMovement <= 10 ? importedMovement * 100 : importedMovement;
   const speedScore = speed > 8 ? 9 : speed > 5 ? 8 : speed > 3 ? 7 : speed > 1.5 ? 6 : 5;
+  const movementScore = movementSpeed >= 180 ? 1 : movementSpeed >= 140 ? 0.75 : movementSpeed >= 110 ? 0.45 : movementSpeed > 0 ? 0.2 : 0;
+  const clearSignals = capabilities.clearSignals;
+  const signalScore = Math.min(5, clearSignals.length * 1.1 + capabilities.coverageSignals.length * 0.5);
   const rawDpsScore = context.dotScore ?? (typeof rawDps === "number" && Number.isFinite(rawDps) && rawDps > 0 ? calibratedDpsStrengthScore(rawDps, capabilities.delivery).score : offence.score ?? 5);
-  const clearScore = Math.max(1, Math.min(10, rawDpsScore * 0.45 + speedScore * 0.15 + context.clearBonus + (coverageEvidence ? 1 : 0.4)));
+  const rawClearScore = rawDpsScore * 0.5 + speedScore * 0.1 + movementScore + signalScore + (coverageEvidence ? 0.8 : 0.25);
+  // Mapping is not bossing, but it still requires surviving ordinary map
+  // contact. Keep clear mechanics independent while preventing a zero-layer
+  // glass cannon from receiving a perfect mapping grade from DPS alone.
+  const survivabilityCeiling = defence.score === null ? 6.5
+    : defence.score <= 2 ? 5.5
+      : defence.score <= 4 ? 6.5
+        : defence.score <= 6 ? 7.5
+          : defence.score <= 7.5 ? 8.5
+            : 10;
+  const clearScore = Math.max(1, Math.min(10, rawClearScore, survivabilityCeiling));
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const bossingScore = Math.max(1, Math.min(10, rawDpsScore - Math.min(0.35, mappingOnly * 0.1)));
   const confidence = offence.confidence === "Low" ? "Low" : "Medium";
   return {
-    dps: rating(rawDpsScore, confidence, [context.dotScore !== null ? `Authoritative imported DoT DPS: ${context.dotDps!.toLocaleString()}.` : `Authoritative single-target PoB DPS strength: ${rawDps && rawDps > 0 ? rawDps.toLocaleString() : "Unavailable"}.`, context.dotScore !== null ? "DoT calibration uses a practical 36m ceiling; poison, ignite, bleed, and other DoT output are not judged by hit-DPS anchors." : calibrationBasis, benchmarkBasis, "Conditions affect confidence and assumptions, not raw DPS strength."]),
-    clear: rating(clearScore, coverageEvidence ? "Medium" : "Low", [`Context-aware estimated clear score: ${round1(clearScore)}/10.`, coverageEvidence ? capabilities.evidence[2] : "No direct area-clear evidence was exported; the estimate leans on single-target DPS and speed.", context.dotEvidence ? "Damage-over-time spread is treated as a mapping archetype rather than discarded as missing hit DPS." : "Clear speed is an estimate from PoB evidence, not a simulated map run."]),
+    dps: rating(rawDpsScore, confidence, [context.dotScore !== null ? `Authoritative imported DoT DPS: ${context.dotDps!.toLocaleString()}.` : `Authoritative single-target PoB DPS strength: ${rawDps && rawDps > 0 ? rawDps.toLocaleString() : "Unavailable"}.`, context.dotScore !== null ? `DoT calibration is cap-aware: ${context.dotDps!.toLocaleString()} maps to ${round1(rawDpsScore)}/10, with high-tens-of-millions sustained DoT treated as elite rather than judged by hit-DPS anchors.` : calibrationBasis, benchmarkBasis, "Conditions affect confidence and assumptions, not raw DPS strength."]),
+    clear: rating(clearScore, clearSignals.length || coverageEvidence ? "Medium" : "Low", [`Context-aware estimated clear score: ${round1(clearScore)}/10.`, `Mapping evidence: ${clearSignals.length ? clearSignals.join("; ") : "No mapping-specific signals"}.`, `Coverage evidence: ${capabilities.coverageSignals.length ? capabilities.coverageSignals.join("; ") : "none"}.`, movementSpeed > 0 ? `Imported movement speed contributes ${round1(movementScore)} points (${movementSpeed}%).` : "Movement speed was not exported, so the score does not assume fast map traversal.", clearScore < rawClearScore ? `Mapping survivability ceiling: ${round1(survivabilityCeiling)}/10 because imported defence evidence is too weak to support a perfect ordinary-map rating.` : "Defence evidence supports the clear estimate without applying a survivability ceiling.", context.dotEvidence ? "Damage-over-time spread is treated as a mapping archetype rather than discarded as missing hit DPS." : "Clear speed is an estimate from PoB evidence, not a simulated map run."]),
     defence: { ...defence, basis: [...defence.basis, "Defence uses imported PoB hit-pool and maximum-hit evidence."] },
     bossing: rating(bossingScore, confidence, [`Authoritative single-target bossing strength: ${round1(bossingScore)}/10 from ${rawDps && rawDps > 0 ? rawDps.toLocaleString() : "the available PoB DPS"}.`, `Delivery model: ${capabilities.delivery}. ${capabilities.singleTargetSignals.join(" · ")}`, "Conditions affect confidence and assumptions rather than raw damage strength.", "This does not simulate boss mechanics or movement downtime."]),
   };
@@ -107,11 +162,12 @@ export function buildOverviewRatings(build: CapabilityBuild & { importedStats: R
 function offenceScore(build: NormalizedBuild, conditions: Condition[]): QualityRating {
   const dpsEvidence = importedRatingDps(build);
   const dps = dpsEvidence.value;
-  if (dps === null || !Number.isFinite(dps)) return rating(null, "Unknown", ["No PoB DPS value was exported."]);
+  if (dps === null || !Number.isFinite(dps)) return rating(1, "Low", ["No positive PoB DPS channel was exported for the displayed skill.", "A conservative 1.0/10 floor is shown instead of '?'; configure the intended skill and Include in Full DPS in PoB, then export again.", "This floor is not evidence that the build literally deals zero damage; it represents missing imported offence evidence."]);
   const context = offenceContext(build);
   const capabilities = context.capabilities;
   const calibration = calibratedDpsStrengthScore(dps, capabilities.delivery);
-  const base = Math.min(10, (context.dotScore ?? calibration.score) * 0.9 + context.offenceBonus);
+  const strength = context.dotScore ?? calibration.score;
+  const base = eliteDamageScore(dps, context.dotDps) ? 10 : Math.min(10, strength + context.offenceBonus);
   const unverified = conditions.filter((condition) => condition.reliability === "Unverified").length;
   const mappingOnly = conditions.filter((condition) => condition.reliability === "Mapping-only").length;
   const reliabilityPenalty = Math.min(1.5, unverified * 0.5) + Math.min(0.5, mappingOnly * 0.25);
@@ -119,8 +175,9 @@ function offenceScore(build: NormalizedBuild, conditions: Condition[]): QualityR
   const basisLabel = dpsEvidence.label;
   const basis = [`Imported ${basisLabel}: ${dps.toLocaleString()}.`];
   basis.unshift(`Raw output strength: ${round1(base)}/10 before reliability adjustments.`);
+  if (eliteDamageScore(dps, context.dotDps)) basis.push("Elite damage threshold reached: the offence ceiling is 10/10 rather than a compressed 9.x score.");
   basis.push(context.dotScore !== null ? `DoT calibration: ${context.dotDps!.toLocaleString()} DoT DPS maps to ${round1(context.dotScore)}/10 on a practical 36m ceiling.` : calibrationBasis, benchmarkBasis, `Peer score for ${capabilities.delivery}: ${round1(calibration.peerScore)}/10 across ${calibration.peerCount} builds.`);
-  if (context.dotScore === null && positive(context.dotDps) && positive(context.directDps)) basis.push(`Direct configured/hit DPS remains authoritative (${context.directDps.toLocaleString()}); DoT evidence is shown as supporting output rather than replacing it.`);
+  if (context.dotScore === null && positive(context.dotDps) && positive(context.directDps)) basis.push(`Hit DPS remains authoritative (${context.directDps.toLocaleString()}); DoT evidence is shown as supporting output because it is not materially higher.`);
   if (unverified) basis.push(`${unverified} configured condition(s) are unverified; a ${round1(Math.min(1.5, unverified * 0.5))}-point reliability adjustment is applied until the source is confirmed.`);
   if (mappingOnly) basis.push(`${mappingOnly} condition(s) are mapping-only; a ${round1(Math.min(0.5, mappingOnly * 0.25))}-point encounter adjustment is applied.`);
   if (context.dotEvidence) basis.push("Damage-over-time output is recognized as a first-class offence archetype alongside hit DPS.");
@@ -226,6 +283,10 @@ function defenceScore(build: NormalizedBuild): QualityRating {
   if (!evidenceCount) return rating(null, "Unknown", ["No resistance, survivability-pool, mitigation, or maximum-hit evidence was exported."]);
   const conversionBonus = shiftBackstop ? 1 : damageShiftEvidence ? 0.35 : 0;
   const rawScore = resistanceScore + poolScore + mitigationScore + maxHitScore + conversionBonus - recoveryPenalty;
+  const strongResistances = effectiveCappedElemental >= 3 && elementalResists.every((value) => typeof value === "number" && value >= 90);
+  const strongChaosResistance = chaosImmuneEvidence || (stats.chaosResistance ?? -100) >= 75;
+  const exceptionalMaximumHit = representativeMaxHit >= 200_000;
+  const exceptionalRecovery = strongestRecovery >= 5_000;
   const layeredDefenceCount = [
     effectiveCappedElemental >= 3,
     pool >= 100_000,
@@ -237,6 +298,10 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     enduranceChargeCount >= 8,
     (stats.physicalDamageReduction ?? 0) >= 80,
     physicalConversionEvidence || damageShiftEvidence,
+    strongResistances,
+    strongChaosResistance,
+    exceptionalMaximumHit,
+    exceptionalRecovery,
   ].filter(Boolean).length;
   const recoveryCeiling = strongestRecovery >= 500 ? 10 : strongestRecovery >= 100 ? 9.6 : strongestRecovery > 0 ? 9.4 : 9.3;
   const hitCeiling = representativeMaxHit >= 100_000 ? 10
@@ -252,9 +317,14 @@ function defenceScore(build: NormalizedBuild): QualityRating {
     && maxHitScore >= 4
     && strongestRecovery >= 500
     && (effectiveCappedElemental >= 3 || shiftedElementalBackstop);
-  const layeredCeiling = exceptionalTank || (layeredDefenceCount >= 7 && (enduranceChargeCount >= 8 || strongestRecovery >= 500)) ? 10 : layeredDefenceCount >= 5 ? 9.6 : 9.4;
+  const exceptionalLayeredDefence = strongResistances && strongChaosResistance && exceptionalMaximumHit && exceptionalRecovery && pool >= 150_000;
+  const layeredCeiling = exceptionalTank || exceptionalLayeredDefence ? 10 : layeredDefenceCount >= 7 ? 9.6 : layeredDefenceCount >= 5 ? 9.5 : 9.4;
   const score = Math.max(1, Math.min(rawScore, recoveryCeiling, hitCeiling, layeredCeiling, 10));
-  basis.push(`Defensive layers counted: ${layeredDefenceCount}/9 (resistance, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion).`);
+  basis.push(`Defensive layers counted: ${layeredDefenceCount}/13 (resistance quality, pool, maximum hit, recovery, avoidance, suppression, mitigation, endurance, and shifting/conversion evidence).`);
+  if (strongResistances) basis.push("Exceptional elemental resistance layer detected: all three elemental resistances are at least 90%.");
+  if (strongChaosResistance) basis.push("Strong chaos resistance layer detected: chaos resistance is at least 75% or chaos is irrelevant because of immunity.");
+  if (exceptionalMaximumHit) basis.push(`Exceptional maximum-hit coverage detected: representative maximum hit is ${representativeMaxHit.toLocaleString()}.`);
+  if (exceptionalRecovery) basis.push(`Exceptional recovery detected: strongest exported recovery layer is ${strongestRecovery.toLocaleString()} per second or equivalent.`);
   if (exceptionalTank) basis.push(`Exceptional tank benchmark reached: ${enduranceChargeCount} endurance charges, ${stats.physicalDamageReduction}% physical damage reduction, high maximum-hit coverage, EHP, capped elemental resistance, and strong recovery.`);
   if (score < rawScore) basis.push(`Defence quality ceiling: ${round1(score)}/10 because maximum-hit and avoidance strength cannot represent sustained survival without stronger recovery and hit coverage.`);
   return rating(score, evidenceCount >= 3 ? "High" : "Medium", [...basis, "Maximum hit is the primary defence signal; capped resistances establish the foundation, while pool, mitigation, recovery, endurance reduction, and physical conversion accumulate toward 10/10.", "Temporary uptime and encounter-specific mechanics are not assumed unless PoB exported them as part of the snapshot."]);
@@ -265,10 +335,13 @@ export function calculateBuildQuality(build: NormalizedBuild, conditions: Condit
   const defence = defenceScore(build);
   const ratingDps = importedRatingDps(build);
   const categoryRatings = buildOverviewRatings(build, offence, defence, conditions, ratingDps.value);
-  const knownScores = [offence.score, defence.score].filter((value): value is number => value !== null);
-  const overallScore = knownScores.length === 2 ? Math.max(1, Math.min(10, Math.min(offence.score!, defence.score!) + Math.abs(offence.score! - defence.score!) / 3)) : knownScores[0] ?? null;
-  const overall = rating(overallScore, knownScores.length === 2 ? "Medium" : "Unknown", ["Overall rating uses a weakest-link adjustment so high damage cannot fully hide missing defence.", "This is a build-quality screening score, not a promise that the character survives a specific encounter."]);
-  return { overall, offence, defence, categoryRatings, capabilityProfile: inferSkillCapabilities(build), ratingDps, assumptions: ["PoB exported values are treated as the imported snapshot.", `Offence blends the absolute PoB DPS curve with peer context from ${benchmarkRecordCount} normalized builds; the absolute curve remains dominant.`, "Defence prioritizes representative maximum hit, then adds capped resistances, survivability pool, mitigation, recovery, endurance reduction, and physical conversion evidence."], limitations: ["Temporary defensive uptime, recovery uptime, movement, boss mechanics, and alternate combat states are not included in this static rating.", "Benchmark records provide peer context, not verified league-wide rankings or human gameplay labels.", "Imported values describe the selected PoB setup; they are not a promise of survival in every map."] };
+  const contentCoverage = evaluateContentCoverage(build, categoryRatings, conditions);
+  const knownScores = [offence.score, defence.score, contentCoverage.overall.score].filter((value): value is number => value !== null);
+  const weakestScore = knownScores.length ? Math.min(...knownScores) : null;
+  const averageScore = knownScores.length ? knownScores.reduce((total, value) => total + value, 0) / knownScores.length : null;
+  const overallScore = weakestScore !== null && averageScore !== null ? Math.max(1, Math.min(10, weakestScore + (averageScore - weakestScore) / 2)) : null;
+  const overall = rating(overallScore, knownScores.length === 3 ? "Medium" : "Unknown", ["Overall rating uses a weakest-link adjustment across offence, defence, and content breadth.", `Content breadth: ${contentCoverage.viableCount}/${contentCoverage.totalCount} endgame jobs are rated viable or better.`, "This is a build-quality screening score, not a promise that the character survives a specific encounter."]);
+  return { overall, offence, defence, categoryRatings, contentCoverage, capabilityProfile: inferSkillCapabilities(build), ratingDps, assumptions: ["PoB exported values are treated as the imported snapshot.", `Offence blends the absolute PoB DPS curve with peer context from ${benchmarkRecordCount} normalized builds; the absolute curve remains dominant.`, "Defence prioritizes representative maximum hit, then adds capped resistances, survivability pool, mitigation, recovery, endurance reduction, and physical conversion evidence.", "Content breadth scores separate endgame jobs so a single-target number cannot stand in for pack clear, wave control, or repeated-hit survival."], limitations: ["Temporary defensive uptime, recovery uptime, movement, boss mechanics, and alternate combat states are not included in this static rating.", "Benchmark records provide peer context, not verified league-wide rankings or human gameplay labels.", "Imported values describe the selected PoB setup; they are not a promise of survival in every map.", ...contentCoverage.limitations] };
 }
 
 export function recalculateBuildQuality(quality: BuildQuality, build: CapabilityBuild & { importedStats: RatingDpsStats }, conditions: Array<{ reliability: string }>, scenarios: ScenarioReport): BuildQuality {
@@ -278,7 +351,7 @@ export function recalculateBuildQuality(quality: BuildQuality, build: Capability
   const imported = importedEvidence.value;
   const differencePercent = imported && imported > 0 ? ((corrected - imported) / imported) * 100 : 0;
   const verification = imported && imported > 0 ? Math.abs(differencePercent) <= 5 ? "matched" : "mismatch" : "not-run";
-  const importedAggregateIsAuthoritative = importedEvidence.value !== null && importedEvidence.label !== "PoB Hit DPS fallback";
+  const importedAggregateIsAuthoritative = importedEvidence.value !== null && !/\bHit DPS\b/i.test(importedEvidence.label);
   const ratingValue = importedAggregateIsAuthoritative ? importedEvidence.value! : corrected;
   const ratingOrigin = importedAggregateIsAuthoritative ? "imported" : "worker-typical";
   const ratingLabel = importedAggregateIsAuthoritative ? importedEvidence.label : "Typical worker-recalculated PoB DPS";
@@ -286,8 +359,12 @@ export function recalculateBuildQuality(quality: BuildQuality, build: Capability
     ? "The imported aggregate PoB value remains authoritative; the worker result is shown as a verification comparison."
     : "No aggregate Full/Combined/DoT DPS was exported, so the typical worker-recalculated value drives the rating.";
   const authoritativeOffence = scenarioOffenceRating(ratingValue, build, conditions);
-  const authoritativeKnownScores = [authoritativeOffence.score, quality.defence.score].filter((value): value is number => value !== null);
-  const authoritativeOverallScore = authoritativeKnownScores.length === 2 ? Math.max(1, Math.min(10, Math.min(authoritativeOffence.score!, quality.defence.score!) + Math.abs(authoritativeOffence.score! - quality.defence.score!) / 3)) : authoritativeKnownScores[0] ?? null;
-  const authoritativeOverall = rating(authoritativeOverallScore, authoritativeOffence.confidence === "Low" ? "Low" : "Medium", [importedAggregateIsAuthoritative ? "Overall rating remains anchored to the imported aggregate PoB DPS." : "Overall rating uses the typical worker-recalculated DPS because no aggregate PoB DPS was exported.", "Peak valid DPS is displayed separately and does not drive the grade."]);
-  return { ...quality, overall: authoritativeOverall, offence: authoritativeOffence, categoryRatings: buildOverviewRatings(build, authoritativeOffence, quality.defence, conditions, ratingValue), capabilityProfile: inferSkillCapabilities(build), ratingDps: { value: ratingValue, label: ratingLabel, origin: ratingOrigin, explanation: ratingExplanation, importedValue: imported ?? undefined, differencePercent, verification }, assumptions: [...quality.assumptions, importedAggregateIsAuthoritative ? "A positive imported aggregate Full/Combined/DoT DPS remains authoritative in the imported snapshot." : "No positive aggregate DPS was exported, so the offence grade is marked as lower-confidence rather than inventing a value."], limitations: [...quality.limitations, "Totem, ballista, minion, summon uptime, placement, AI, and deployment timing remain lower-confidence until modeled explicitly."] };
+  const authoritativeCategoryRatings = buildOverviewRatings(build, authoritativeOffence, quality.defence, conditions, ratingValue);
+  const authoritativeContentCoverage = evaluateContentCoverage(build, authoritativeCategoryRatings, conditions);
+  const authoritativeKnownScores = [authoritativeOffence.score, quality.defence.score, authoritativeContentCoverage.overall.score].filter((value): value is number => value !== null);
+  const authoritativeWeakestScore = authoritativeKnownScores.length ? Math.min(...authoritativeKnownScores) : null;
+  const authoritativeAverageScore = authoritativeKnownScores.length ? authoritativeKnownScores.reduce((total, value) => total + value, 0) / authoritativeKnownScores.length : null;
+  const authoritativeOverallScore = authoritativeWeakestScore !== null && authoritativeAverageScore !== null ? Math.max(1, Math.min(10, authoritativeWeakestScore + (authoritativeAverageScore - authoritativeWeakestScore) / 2)) : null;
+  const authoritativeOverall = rating(authoritativeOverallScore, authoritativeOffence.confidence === "Low" ? "Low" : "Medium", [importedAggregateIsAuthoritative ? "Overall rating remains anchored to the imported aggregate PoB DPS." : "Overall rating uses the typical worker-recalculated DPS because no aggregate PoB DPS was exported.", `Content breadth remains visible: ${authoritativeContentCoverage.viableCount}/${authoritativeContentCoverage.totalCount} endgame jobs are rated viable or better.`, "Peak valid DPS is displayed separately and does not drive the grade."]);
+  return { ...quality, overall: authoritativeOverall, offence: authoritativeOffence, categoryRatings: authoritativeCategoryRatings, contentCoverage: authoritativeContentCoverage, capabilityProfile: inferSkillCapabilities(build), ratingDps: { value: ratingValue, label: ratingLabel, origin: ratingOrigin, explanation: ratingExplanation, importedValue: imported ?? undefined, differencePercent, verification }, assumptions: [...quality.assumptions, importedAggregateIsAuthoritative ? "A positive imported aggregate Full/Combined/DoT DPS remains authoritative in the imported snapshot." : "No positive aggregate DPS was exported, so the offence grade is marked as lower-confidence rather than inventing a value."], limitations: [...quality.limitations, "Totem, ballista, minion, summon uptime, placement, AI, and deployment timing remain lower-confidence until modeled explicitly.", ...authoritativeContentCoverage.limitations] };
 }

@@ -9,7 +9,8 @@ import { detectConditions } from "@/src/features/conditions/registry";
 export async function POST(request: Request) {
   try {
     const body = await request.json(); const { encounterSeconds: rawEncounterSeconds, disabledAutomatic = [], ...engineBody } = body ?? {}; const parsed = engineRequestSchema.parse(engineBody); const disabledIds = Array.isArray(disabledAutomatic) ? disabledAutomatic.filter((value): value is string => typeof value === "string") : []; const encounterSeconds = Math.min(Math.max(Number(rawEncounterSeconds ?? 30), 1), 300);
-    const build = parsePobXml(parsed.xml);
+    const parsedBuild = parsePobXml(parsed.xml);
+    const build = parsed.scenario.skillName ? { ...parsedBuild, mainSkill: parsed.scenario.skillName } : parsedBuild;
     const conditions = detectConditions(build);
     const profiles = buildScenarioProfiles(build, conditions, disabledIds);
     const results: Record<string, Awaited<ReturnType<typeof calculateWithEngine>>> = {};
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     if (burstSeconds && results.burst) timeline.push({ id: "burst", label: "Realistic burst window", durationSeconds: burstSeconds, dps: scenarioDps(results.burst).value, source: "engine", assumptions: ["Burst duration is an explicit five-second scenario assumption until condition durations are fully resolved."] });
     if (remainingSeconds && results.sustained) timeline.push({ id: "sustained-rest", label: "Sustained source-backed boss state", durationSeconds: remainingSeconds, dps: scenarioDps(results.sustained).value, source: "engine", assumptions: ["The remaining encounter uses a source-backed boss state; imported unverified PoB conditions are not carried into sustained DPS."] });
     const curseNames = [...new Set(build.skillSetups.flatMap((setup) => setup.gems).filter((gem) => /mark|curse|punishment|conductivity|flammability|elemental weakness|frostbite|despair|temporal chains|vulnerability/i.test(gem.name)).map((gem) => gem.name))].slice(0, 10);
-    const mainSetup = build.skillSetups.find((setup) => setup.includeInFullDPS);
+    const mainSetup = build.skillSetups.find((setup) => setup.gems.some((gem) => gem.name.toLowerCase().replace(/[^a-z0-9]/g, "") === (build.mainSkill ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""))) ?? build.skillSetups.find((setup) => setup.includeInFullDPS);
     const supportNames = [...new Set((mainSetup?.gems ?? []).filter((gem) => gem.support && gem.enabled && !gem.provided && !gem.trigger).map((gem) => gem.name))].slice(0, 8);
     const configuredDps = results.configured ? scenarioDps(results.configured).value : null;
     const compareDisabledGems = async (names: string[]) => {

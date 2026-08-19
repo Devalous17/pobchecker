@@ -60,15 +60,25 @@ const itemDisplayName = (item: any) => {
 const itemRarity = (item: any) => String(item?.["@_rarity"] ?? item?.Rarity ?? "").trim() || undefined;
 const itemBaseType = (item: any) => String(item?.["@_baseType"] ?? item?.BaseType ?? item?.baseType ?? "").trim() || undefined;
 
+const displaySkillId = (value: unknown) => String(value ?? "")
+  .replace(/([a-z])([A-Z])/g, "$1 $2")
+  .replace(/[_-]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
 const gemInfo = (gem: any, skill: any): SkillGemInfo | null => {
-  const name = String(gem?.["@_nameSpec"] ?? gem?.["@_name"] ?? "").trim();
+  const source = String(skill?.["@_source"] ?? gem?.["@_source"] ?? "").trim() || undefined;
+  const gemId = String(gem?.["@_skillId"] ?? gem?.["@_gemId"] ?? "").trim() || undefined;
+  const name = String(gem?.["@_nameSpec"] || gem?.["@_name"] || displaySkillId(gemId) || "").trim();
   if (!name) return null;
   const displayName = String(gem?.["@_name"] ?? "").trim() || undefined;
   const level = asNumber(gem?.["@_level"]);
   const quality = asNumber(gem?.["@_quality"]);
   const support = asBool(gem?.["@_isSupport"] ?? gem?.["@_support"]) || knownSupportGems.has(displayName ?? name) || supportNamePattern.test(displayName ?? name);
-  const trigger = asBool(skill?.["@_trigger"] ?? skill?.["@_triggered"] ?? gem?.["@_trigger"] ?? gem?.["@_triggered"]);
-  const provided = asBool(gem?.["@_isProvided"] ?? gem?.["@_provided"]) || /item provided/i.test(String(gem?.["@_name"] ?? ""));
+  const sourcedFromPassiveOrItem = /^(tree|item|passive):/i.test(source ?? "");
+  const hasProvidedSkillMetadata = Boolean(gem?.["@_skillMinion"] || gem?.["@_isGranted"] || gem?.["@_granted"]);
+  const trigger = sourcedFromPassiveOrItem || asBool(skill?.["@_trigger"] ?? skill?.["@_triggered"] ?? gem?.["@_trigger"] ?? gem?.["@_triggered"]);
+  const provided = sourcedFromPassiveOrItem || hasProvidedSkillMetadata || asBool(gem?.["@_isProvided"] ?? gem?.["@_provided"]) || /item provided/i.test(String(gem?.["@_name"] ?? ""));
   const enabled = gem?.["@_enabled"] === undefined ? asBool(skill?.["@_enabled"] ?? true) : asBool(gem?.["@_enabled"]);
   const includeInFullDPS = asBool(gem?.["@_includeInFullDPS"] ?? skill?.["@_includeInFullDPS"]);
   const skillPart = asNumber(gem?.["@_skillPart"] ?? skill?.["@_skillPart"]);
@@ -81,7 +91,7 @@ const gemInfo = (gem: any, skill: any): SkillGemInfo | null => {
     provided ? "Provided by an item or passive" : undefined,
     includeInFullDPS ? "Included in Full DPS" : undefined,
   ].filter(Boolean).join(" · ") || "Imported from the PoB skill setup.";
-  return { name, displayName, level, quality, attributeColor: color, detail, support, trigger, provided, enabled, includeInFullDPS, skillPart, skillCount };
+  return { name, gemId, source, displayName, level, quality, attributeColor: color, detail, support, trigger, provided, enabled, includeInFullDPS, skillPart, skillCount };
 };
 
 const parseSkillSetups = (root: any): SkillSetup[] => {
@@ -95,10 +105,12 @@ const parseSkillSetups = (root: any): SkillSetup[] => {
       const gemRows = list(skill?.Gem).length ? list(skill?.Gem) : [skill];
       const gems = gemRows.map((gem) => gemInfo(gem, skill)).filter((gem): gem is SkillGemInfo => Boolean(gem));
       const slot = String(skill?.["@_slot"] ?? skill?.["@_itemSlot"] ?? "").trim() || undefined;
+      const source = String(skill?.["@_source"] ?? "").trim() || undefined;
       const explicitLabel = String(skill?.["@_label"] ?? skill?.["@_name"] ?? "").trim();
       const label = explicitLabel || slot || `Skill setup ${set?.["@_id"] ?? setIndex + 1}.${skillIndex + 1}`;
+      const mainActiveSkillIndex = asNumber(skill?.["@_mainActiveSkillCalcs"] ?? skill?.["@_mainActiveSkill"]);
       engineIndex += 1;
-      return { id: `${set?.["@_id"] ?? setIndex + 1}-${skillIndex + 1}`, engineIndex, label, slot, enabled: skill?.["@_enabled"] === undefined ? true : asBool(skill?.["@_enabled"]), includeInFullDPS: asBool(skill?.["@_includeInFullDPS"]) || gems.some((gem) => gem.includeInFullDPS), mainActiveSkill: asBool(skill?.["@_mainActiveSkill"]), gems } satisfies SkillSetup;
+      return { id: `${set?.["@_id"] ?? setIndex + 1}-${skillIndex + 1}`, engineIndex, label, slot, source, enabled: skill?.["@_enabled"] === undefined ? true : asBool(skill?.["@_enabled"]), includeInFullDPS: asBool(skill?.["@_includeInFullDPS"]) || gems.some((gem) => gem.includeInFullDPS), mainActiveSkill: mainActiveSkillIndex !== undefined ? mainActiveSkillIndex > 0 : asBool(skill?.["@_mainActiveSkill"]), mainActiveSkillIndex, gems } satisfies SkillSetup;
     }).filter((setup) => setup.gems.length);
   });
 };
@@ -156,33 +168,50 @@ export function parsePobXml(xml: string): NormalizedBuild {
     ...passiveNodes.filter((node) => node.type !== "passive").map((node) => ({ category: node.type === "ascendancy" ? "ascendancy" as const : "passive" as const, name: node.name, detail: "Allocated tree node in the imported build.", attributeColor: "unknown" as const })),
   ];
   const playerStats = new Map(list(build.PlayerStat).map((stat: any) => [String(stat?.["@_stat"] ?? ""), Number(stat?.["@_value"])]));
+  const minionStats = new Map(list(build.MinionStat).map((stat: any) => [String(stat?.["@_stat"] ?? ""), Number(stat?.["@_value"])]));
   const fullDpsNode = root.Build?.FullDPSSkill;
   const fullDpsSkill = typeof fullDpsNode === "string"
     ? fullDpsNode
     : [fullDpsNode?.["@_source"], fullDpsNode?.["@_name"], fullDpsNode?.["@_stat"], fullDpsNode?.["#text"]].find((value) => String(value ?? "").trim());
   const fullDpsName = String(fullDpsSkill ?? "").replace(/^\d+x\s+/i, "").trim();
-  const activeGems = skillSetups.flatMap((setup) => setup.gems.filter((gem) => !gem.support && !gem.provided && !gem.trigger));
+  const activeGems = skillSetups.flatMap((setup) => setup.gems.filter(isActiveSkillGem));
   const activeCandidates = activeGems.map((gem) => gem.name);
-  const fullDpsSetupSkill = skillSetups.find((setup) => setup.includeInFullDPS)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
   const mainActiveSkill = skillSetups.find((setup) => setup.mainActiveSkill)?.gems.find((gem) => !gem.support && !gem.provided && !gem.trigger);
-  const fullDpsCandidate = activeGems.find((gem) => [gem.name, gem.displayName].some((name) => normalizedSkillName(name ?? "") === normalizedSkillName(fullDpsName)));
-  // The socket group marked includeInFullDPS is the strongest signal for the
-  // displayed damage skill. Some exports retain an old FullDPSSkill value for
-  // a utility skill (for example Decoy Totem) even while another setup is
-  // marked as the configured damage setup.
-  const mainSkill = fullDpsSetupSkill?.name || fullDpsCandidate?.name || mainActiveSkill?.name || activeCandidates[0] || "";
+  const resolvedMainSkill = resolveImportedMainSkill(skillSetups, fullDpsName);
+  const mainSkill = resolvedMainSkill.selected?.gem.name || mainActiveSkill?.name || activeCandidates[0] || "";
   const stat = (...names: string[]) => names.map((name) => playerStats.get(name)).find((value) => value !== undefined);
+  const minionStat = (...names: string[]) => names.map((name) => minionStats.get(name)).find((value) => value !== undefined);
+  const positiveStat = (...names: string[]) => names.map((name) => playerStats.get(name)).find((value) => value !== undefined && Number.isFinite(value) && value > 0);
+  const positiveMinionStat = (...names: string[]) => names.map((name) => minionStats.get(name)).find((value) => value !== undefined && Number.isFinite(value) && value > 0);
+  const activeMinionLimit = positiveStat("ActiveMinionLimit");
+  const aggregateMinionStat = (...names: string[]) => {
+    const value = positiveMinionStat(...names);
+    return value === undefined ? undefined : value * (activeMinionLimit ?? 1);
+  };
+  const playerOrMinion = (names: string[], minionNames: string[] = names) => positiveStat(...names) ?? aggregateMinionStat(...minionNames);
   const importedStats: ImportedStats = {
     source: playerStats.size ? "pob-calcs" : "unavailable",
-    fullDps: stat("FullDPS"),
-    totalDps: stat("TotalDPS"),
-    totalDotDps: stat("TotalDotDPS", "WithDotDPS", "TotalDot"),
-    combinedDps: stat("CombinedDPS"),
-    averageDps: stat("AverageDPS"),
-    averageHit: stat("AverageHit", "AverageDamage"),
+    fullDps: positiveStat("FullDPS") ?? aggregateMinionStat("CombinedDPS"),
+    totalDps: playerOrMinion(["TotalDPS"]),
+    totalDotDps: playerOrMinion(["TotalDotDPS", "WithDotDPS", "TotalDot"]),
+    combinedDps: playerOrMinion(["CombinedDPS"]),
+    minionTotalDps: positiveMinionStat("TotalDPS"),
+    minionTotalDotDps: positiveMinionStat("TotalDotDPS", "TotalDot"),
+    minionCombinedDps: positiveMinionStat("CombinedDPS"),
+    minionAverageHit: positiveMinionStat("AverageDamage"),
+    minionSpeed: positiveMinionStat("Speed"),
+    poisonDps: aggregateMinionStat("PoisonDPS"),
+    poisonTotalDps: aggregateMinionStat("WithPoisonDPS"),
+    bleedDps: aggregateMinionStat("WithBleedDPS", "BleedDPS"),
+    igniteDps: aggregateMinionStat("WithIgniteDPS", "IgniteDPS"),
+    averageDps: positiveStat("AverageDPS"),
+    averageHit: positiveStat("AverageHit", "AverageDamage") ?? positiveMinionStat("AverageDamage"),
     criticalStrikeChance: stat("CriticalStrikeChance", "CritChance", "EffectiveCritChance"),
     criticalStrikeMultiplier: stat("CriticalStrikeMultiplier", "CritMultiplier"),
-    speed: stat("Speed"),
+    speed: positiveStat("Speed") ?? positiveMinionStat("Speed"),
+    movementSpeed: stat("MovementSpeed", "EffectiveMovementSpeed", "EffectiveMovementSpeedMod"),
+    activeMinionLimit,
+    areaOfEffectRadius: stat("AreaOfEffectRadius", "AreaOfEffectRadiusMetres", "AreaOfEffect"),
     life: stat("Life"),
     energyShield: stat("EnergyShield"),
     mana: stat("Mana"),
@@ -225,22 +254,99 @@ export function parsePobXml(xml: string): NormalizedBuild {
     physicalDamageReduction: stat("PhysicalDamageReduction", "PhysicalDamageReductionPercent"),
   };
   const identityName = String(build?.["@_name"] ?? "").trim() || mainSkill || "Unnamed build";
-  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, damageChannels, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
+  return { identity: { name: identityName, level: asNumber(build?.["@_level"]), className: build?.["@_className"], ascendancy, version: build?.["@_version"] }, mainSkill: mainSkill || undefined, fullDpsSkill: fullDpsName || undefined, rawXml: xml, sections: Object.keys(root), enabledConfigs, configFields, sources, passiveNodes, skills, items: [...items, ...flasks], diagnostics: [], sourceAssets, skillSetups, damageChannels, equippedItems, importedStats, allocatedNodeIds, treeVersion: String(activeSpec?.["@_treeVersion"] ?? "") || undefined };
 }
 
 const normalizedSkillName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const isActiveSkillGem = (gem: SkillGemInfo) => !gem.support && !gem.provided && !gem.trigger;
+const matchesSkillName = (gem: SkillGemInfo, name: string) => [gem.name, gem.displayName].some((candidate) => normalizedSkillName(candidate ?? "") === normalizedSkillName(name));
+
+/**
+ * Resolves the PoB-selected skill without assuming the first socket group is
+ * the main one. This only selects the identity shown beside the imported
+ * aggregate FullDPS value; it never recalculates that value.
+ */
+const resolveImportedMainSkill = (skillSetups: SkillSetup[], fullDpsName: string) => {
+  const activeGems = skillSetups.flatMap((setup) => setup.gems.filter(isActiveSkillGem));
+  const markedSetups = skillSetups.filter((setup) => setup.enabled && setup.includeInFullDPS);
+  const markedCandidates = markedSetups.flatMap((setup) => setup.gems.filter(isActiveSkillGem).map((gem) => ({ setup, gem })));
+  const markerCandidate = activeGems.find((gem) => matchesSkillName(gem, fullDpsName));
+  const markerInMarkedSetup = markedCandidates.find(({ gem }) => matchesSkillName(gem, fullDpsName));
+  const indexedMarkedCandidate = markedSetups.flatMap((setup) => {
+    if (!setup.mainActiveSkillIndex || setup.mainActiveSkillIndex < 1) return [];
+    const active = setup.gems.filter(isActiveSkillGem);
+    const gem = active[setup.mainActiveSkillIndex - 1];
+    return gem ? [{ setup, gem }] : [];
+  })[0];
+  const mainActiveMarkedCandidate = markedSetups.flatMap((setup) => {
+    if (!setup.mainActiveSkill) return [];
+    const active = setup.gems.filter(isActiveSkillGem);
+    const gem = setup.mainActiveSkillIndex && setup.mainActiveSkillIndex > 0
+      ? active[setup.mainActiveSkillIndex - 1]
+      : active[0];
+    return gem ? [{ setup, gem }] : [];
+  })[0];
+  const mainActiveCandidates = skillSetups
+    .filter((setup) => setup.enabled && setup.mainActiveSkill)
+    .flatMap((setup) => {
+      const active = setup.gems.filter(isActiveSkillGem);
+      const gem = setup.mainActiveSkillIndex && setup.mainActiveSkillIndex > 0
+        ? active[setup.mainActiveSkillIndex - 1]
+        : active[0];
+      return gem ? [{ setup, gem }] : [];
+    });
+  const markerFallback = markerCandidate
+    ? { setup: skillSetups.find((setup) => setup.gems.includes(markerCandidate)), gem: markerCandidate }
+    : undefined;
+  // PoB can mark a Tree/Item-provided trigger as the active calculation skill.
+  // It is evidence that the effect exists, not the user's socketed damage skill.
+  // Prefer a real gear-socketed candidate when multiple main markers exist.
+  const socketedMainActiveCandidate = mainActiveCandidates.find(({ setup }) => !/^(tree|item|passive):/i.test(setup.source ?? ""));
+  const selected = markerInMarkedSetup ?? mainActiveMarkedCandidate ?? indexedMarkedCandidate ?? markedCandidates[0] ?? markerFallback ?? socketedMainActiveCandidate ?? mainActiveCandidates[0] ?? skillSetups.flatMap((setup) => setup.gems.filter(isActiveSkillGem).map((gem) => ({ setup, gem })))[0];
+  return { selected, activeGems };
+};
 
 /** Re-selects the displayed damage skill after PoB gem metadata has been enriched. */
 export function refreshDamageSkillIdentity(build: NormalizedBuild): NormalizedBuild {
   const isDamageGem = (gem: SkillGemInfo) => gem.enabled && !gem.support && !gem.provided && !gem.trigger && !(gem.tags ?? []).some((tag) => tag.toLowerCase() === "support");
-  const fullDpsSetup = build.skillSetups.find((setup) => setup.includeInFullDPS);
+  const fullDpsSetups = build.skillSetups.filter((setup) => setup.enabled && setup.includeInFullDPS);
   const mainActiveSetup = build.skillSetups.find((setup) => setup.mainActiveSkill);
+  const markerCandidate = build.fullDpsSkill
+    ? build.skillSetups.flatMap((setup) => setup.gems.filter(isDamageGem)).find((gem) => matchesSkillName(gem, build.fullDpsSkill ?? ""))
+    : undefined;
+  const markedMarkerCandidate = markerCandidate && fullDpsSetups.some((setup) => setup.gems.includes(markerCandidate)) ? markerCandidate : undefined;
+  const indexedMarkedCandidate = fullDpsSetups.flatMap((setup) => {
+    if (!setup.mainActiveSkillIndex || setup.mainActiveSkillIndex < 1) return [];
+    const active = setup.gems.filter(isDamageGem);
+    const gem = active[setup.mainActiveSkillIndex - 1];
+    return gem ? [gem] : [];
+  })[0];
   const candidates = [
-    fullDpsSetup?.gems.find(isDamageGem),
+    markedMarkerCandidate,
+    indexedMarkedCandidate,
+    ...fullDpsSetups.flatMap((setup) => setup.gems.filter(isDamageGem)),
+    markerCandidate,
     mainActiveSetup?.gems.find(isDamageGem),
     ...build.skillSetups.flatMap((setup) => setup.gems.filter(isDamageGem)),
   ].filter((gem): gem is SkillGemInfo => Boolean(gem));
-  const existing = candidates.find((gem) => normalizedSkillName(gem.name) === normalizedSkillName(build.mainSkill ?? ""));
-  const mainSkill = existing?.name ?? candidates[0]?.name;
+  // Once metadata is available, the first candidate is the imported PoB
+  // damage setup (Full DPS marker/index first). Do not let an earlier stale
+  // identity such as Raise Spectre override that setup merely because it is
+  // also an enabled active gem.
+  const existing = candidates.find((gem) => matchesSkillName(gem, build.mainSkill ?? ""));
+  const ranked = build.skillSetups
+    .filter((setup) => setup.enabled && !/^(tree|item|passive):/i.test(setup.source ?? ""))
+    .flatMap((setup) => setup.gems.filter(isDamageGem).map((gem) => ({ setup, gem })))
+    .sort((left, right) => {
+      const score = (entry: { setup: SkillSetup; gem: SkillGemInfo }) => {
+        const tags = new Set((entry.gem.tags ?? []).map((tag) => tag.toLowerCase()));
+        const damageTags = ["attack", "spell", "projectile", "area", "melee", "minion", "summon", "totem", "trap", "mine", "brand"];
+        const supportCount = entry.setup.gems.filter((gem) => gem.enabled && gem.support && !gem.provided && !gem.trigger).length + (entry.setup.externalSupportEvidence?.length ?? 0);
+        return damageTags.filter((tag) => tags.has(tag)).length + Math.min(4, supportCount) * 2 + (entry.gem.damageModel ? 1 : 0);
+      };
+      return score(right) - score(left);
+    });
+  const explicitCandidate = markedMarkerCandidate ?? indexedMarkedCandidate ?? fullDpsSetups.flatMap((setup) => setup.gems.filter(isDamageGem))[0] ?? markerCandidate;
+  const mainSkill = explicitCandidate?.name ?? ranked[0]?.gem.name ?? candidates[0]?.name ?? existing?.name;
   return { ...build, mainSkill, damageChannels: discoverDamageChannels(build.skillSetups) };
 }

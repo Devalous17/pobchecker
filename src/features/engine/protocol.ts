@@ -59,6 +59,7 @@ export const engineResponseSchema = z.object({
   engine: z.object({ name: z.string(), version: z.string(), commit: z.string() }),
   calculated: z.boolean(),
   scenario: scenarioConfigSchema,
+  selectedSkill: z.string().optional(),
   offence: z.record(z.string(), z.number().finite().nullable()),
   minion: z.record(z.string(), z.number().finite().nullable()).optional(),
   defence: z.record(z.string(), z.number().finite().nullable()),

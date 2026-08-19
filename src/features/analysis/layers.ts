@@ -170,7 +170,8 @@ function offenceLayers(build: NormalizedBuild, conditions: Condition[], quality:
     findings.push(unavailableFinding("offence-damage-output", "offence", "Base damage", "Configured damage output", [], conditionNames, ["No positive PoB damage field was exported."], "Damage output cannot be graded from the imported snapshot.", "A positive PoB DPS, DoT DPS, or Combined DPS field is required."));
   }
 
-  const mainSetup = build.skillSetups.find((setup) => setup.includeInFullDPS);
+  const normalizedMainSkill = build.mainSkillSelection ? (build.mainSkill ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+  const mainSetup = build.skillSetups.find((setup) => setup.gems.some((gem) => normalizedMainSkill && gem.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill)) ?? build.skillSetups.find((setup) => setup.includeInFullDPS);
   if (mainSetup) {
     const activeGems = mainSetup.gems.filter((gem) => !gem.support && !gem.provided && !gem.trigger);
     findings.push({

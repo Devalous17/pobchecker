@@ -162,7 +162,8 @@ function sourcedCombatState(build: NormalizedBuild, conditions: Condition[], opt
   if (enabled("infused-channelling") && hasSource(conditions, "infused-channelling") && inspirationCharges !== undefined) config.overrideInspirationCharges = inspirationCharges;
   const skillNames = enabledGemNames(build).join(" ").toLowerCase();
   for (const [gemName, field] of Object.entries(curseFields)) if (enabled(`curse-${field}`) && skillNames.includes(gemName)) config[field] = 1;
-  const mainChannel = build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? build.damageChannels.find((channel) => channel.active);
+  const normalizedMainSkill = (build.mainSkill ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const mainChannel = build.damageChannels.find((channel) => channel.active && normalizedMainSkill && channel.skillName.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedMainSkill) ?? build.damageChannels.find((channel) => channel.active && channel.includeInFullDPS) ?? build.damageChannels.find((channel) => channel.active);
   const importedSkillPart = numberInput(build, "skillPartCalcs");
   const importedSkillCount = numberInput(build, "skillCount");
   const selectedSkillPart = mainChannel?.skillPart ?? importedSkillPart;

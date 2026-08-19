@@ -29,6 +29,15 @@ describe("PoB skill and equipment import", () => {
     expect(build.mainSkill).toBe("Storm Burst of Repulsion");
     expect(build.damageChannels.map((channel) => channel.skillName)).toEqual(["Storm Burst of Repulsion"]);
   });
+  it("uses the active-gem position when a checked linked setup contains a utility gem first", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Storm Burst of Repulsion" /></Build><Skills><SkillSet id="1"><Skill slot="Gloves" includeInFullDPS="true" mainActiveSkill="2"><Gem nameSpec="Decoy Totem" name="Decoy Totem" /><Gem nameSpec="Storm Burst of Repulsion" name="Storm Burst" /></Skill></SkillSet></Skills></PathOfBuilding>`);
+    expect(build.skillSetups[0].mainActiveSkillIndex).toBe(2);
+    expect(build.mainSkill).toBe("Storm Burst of Repulsion");
+  });
+  it("imports minion hit, poison, DoT, combined DPS, and speed when player DPS fields are zero", () => {
+    const build = parsePobXml(`<PathOfBuilding><Build><PlayerStat stat="ActiveMinionLimit" value="10"/><PlayerStat stat="FullDPS" value="0"/><PlayerStat stat="TotalDPS" value="0"/><PlayerStat stat="Speed" value="0"/><MinionStat stat="AverageDamage" value="67181"/><MinionStat stat="Speed" value="14.6"/><MinionStat stat="TotalDPS" value="980845"/><MinionStat stat="PoisonDPS" value="42686"/><MinionStat stat="WithPoisonDPS" value="3883550"/><MinionStat stat="TotalDotDPS" value="2902704"/><MinionStat stat="CombinedDPS" value="3883550"/></Build><Skills><SkillSet id="1" includeInFullDPS="true"><Skill mainActiveSkill="1"><Gem nameSpec="Summon Carrion Golem of Scavenging" name="Summon Carrion Golem"/></Skill></SkillSet></Skills></PathOfBuilding>`);
+    expect(build.importedStats).toMatchObject({ fullDps: 38835500, totalDps: 9808450, totalDotDps: 29027040, combinedDps: 38835500, averageHit: 67181, speed: 14.6, poisonTotalDps: 38835500, activeMinionLimit: 10 });
+  });
   it("discovers generic damage channels without relying on a specific skill name", () => {
     const build = parsePobXml(`<PathOfBuilding><Build><FullDPSSkill source="Storm Burst"/></Build><Skills><SkillSet id="1"><Skill includeInFullDPS="true"><Gem nameSpec="Storm Burst" name="Storm Burst"/><Gem nameSpec="Storm Burst Totem" name="Storm Burst Totem"/><Gem nameSpec="Ignite" name="Ignite"/></Skill></SkillSet></Skills></PathOfBuilding>`);
     expect(build.damageChannels.map((channel) => channel.kind)).toEqual(["unknown", "totem", "damage-over-time"]);
